@@ -1,0 +1,17 @@
+.git
+.gitignore
+*.pyc
+__pycache__
+*.pt
+*.pth
+*.p
+wandb/
+data/
+corpus/
+outputs/
+checkpoints/
+experiments/
+tmp*
+.DS_Store
+.vscode/
+.idea/

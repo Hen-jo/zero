@@ -26,8 +26,8 @@ model_name=$(basename "$model" | tr '[:upper:]' '[:lower:]')
 CONFIG_PATH="./config"
 TOOL_CONFIG="$CONFIG_PATH/search_tool_config.yaml"
 
-TRAIN_DATA="./data/zero_ratio${hop_ratio}.parquet"
-VAL_DATA="./data/test.parquet"
+TRAIN_DATA="/input/data/zero_ratio${hop_ratio}.parquet"
+VAL_DATA="/input/data/test.parquet"
 
 
 # source activate llm;

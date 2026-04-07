@@ -32,13 +32,13 @@ CKPT_PATH="${EXP_DIR}/${MODEL_PATH}/global_step_${challenger_step}"
 CONFIG_PATH="./config"
 TOOL_CONFIG="$CONFIG_PATH/search_tool_config.yaml"
 
-TRAIN_DATA="./data/zero_ratio${hop_ratio}.parquet"
-TRAIN_DATA_OUT="./data/zero_${MODEL_PATH}.parquet"
+TRAIN_DATA="/input/data/zero_ratio${hop_ratio}.parquet"
+TRAIN_DATA_OUT="/input/data/zero_${MODEL_PATH}.parquet"
 
 
 python search/retrieval_server.py \
-    --index_path='./corpus/e5_Flat.index' \
-    --corpus_path='./corpus/wiki-18.jsonl' \
+    --index_path='/input/corpus/e5_Flat.index' \
+    --corpus_path='/input/corpus/wiki-18.jsonl' \
     --retriever_model='intfloat/e5-base-v2' \
     --retriever_name='e5' \
     --faiss_gpu \

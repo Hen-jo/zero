@@ -1,30 +1,10 @@
 # Dr. Zero: Self-Evolving Search Agents
 # Base: PyTorch 2.3 + CUDA 12.1 (verl 0.5.0 / sglang 호환)
-# 사내 Nexus mirror 사용
-FROM docker-registry.hmc.co.kr/pytorch/pytorch:2.3.0-cuda12.1-cudnn8-devel
+FROM pytorch/pytorch:2.3.0-cuda12.1-cudnn8-devel
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1
-
-# 사내 APT 저장소 설정 (Ubuntu 22.04 기준)
-RUN rm -f /etc/apt/sources.list.d/* && \
-    echo 'Acquire::https::Verify-Peer "false";' > /etc/apt/apt.conf.d/80-ssl-exceptions && \
-    echo 'Acquire::https::Verify-Host "false";' >> /etc/apt/apt.conf.d/80-ssl-exceptions && \
-    echo 'deb [trusted=yes arch=amd64] https://nexus.auto-hmg.io/repository/apt-ubuntu-jammy/ jammy main restricted multiverse universe' > /etc/apt/sources.list && \
-    echo 'deb [trusted=yes arch=amd64] https://nexus.auto-hmg.io/repository/apt-ubuntu-jammy/ jammy-updates main restricted multiverse universe' >> /etc/apt/sources.list && \
-    echo 'deb [trusted=yes arch=amd64] https://nexus.auto-hmg.io/repository/apt-ubuntu-jammy/ jammy-security main restricted multiverse universe' >> /etc/apt/sources.list
-
-# 사내 pip 저장소 설정
-RUN echo "[global]" > /etc/pip.conf && \
-    echo "trusted-host = nexus.auto-hmg.io" >> /etc/pip.conf && \
-    echo "timeout = 6000" >> /etc/pip.conf && \
-    echo "" >> /etc/pip.conf && \
-    echo "[install]" >> /etc/pip.conf && \
-    echo "index-url = https://nexus.auto-hmg.io/repository/pypi-proxy/simple/" >> /etc/pip.conf && \
-    echo "" >> /etc/pip.conf && \
-    echo "[search]" >> /etc/pip.conf && \
-    echo "index-url = https://nexus.auto-hmg.io/repository/pypi-proxy/pypi" >> /etc/pip.conf
 
 # 시스템 패키지
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -34,6 +14,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /workspace
 
 # verl 0.5.0 + sglang 의존성 설치
+# (volcengine/verl v0.5.0 requirements.txt 기반)
 RUN pip install --upgrade pip && \
     pip install \
         "verl==0.5.0" \

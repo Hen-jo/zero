@@ -2,7 +2,7 @@ accelerate
 codetiming
 datasets
 dill
-flash_attn==2.8.0
+flash_attn==2.7.3
 hydra-core
 numpy<2.0.0
 pandas
@@ -14,10 +14,10 @@ ray[default]>=2.10
 tensordict>=0.8.0,<=0.9.1,!=0.9.0
 torchdata
 torchvision
-transformers>=4.49.0
-wandb
+transformers==4.49.0
+wandb==0.24.0
 sglang==0.4.8
-transformer_engine==2.3
+transformer_engine==2.2.0
 torch-memory-saver>=0.0.5
 huggingface_hub
 verl==0.5.0
@@ -32,3 +32,6 @@ pyzmq
 httpx>=0.27.0
 openai>=1.0.0
 pyserini
+tensordict
+omegaconf
+hydra-core

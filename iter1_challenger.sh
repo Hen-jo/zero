@@ -23,7 +23,7 @@ reward_group_size=5
 model=/input/model
 model_name=$(basename "$model" | tr '[:upper:]' '[:lower:]')
 
-CONFIG_PATH="./config"
+CONFIG_PATH="$(pwd)/config"
 TOOL_CONFIG="$CONFIG_PATH/search_tool_config.yaml"
 
 TRAIN_DATA="/input/data/zero_ratio${hop_ratio}.parquet"

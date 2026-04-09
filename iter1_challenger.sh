@@ -6,10 +6,10 @@ set -x
 kill -9 $(lsof -t -i :8000);
 kill -9 $(lsof -t -i :8001);
 
-tp=2
+tp=1
 dp=4
-gpus=8
-batch_per_gpu=2
+gpus=4
+batch_per_gpu=1
 rollout_memory_utilization=0.25
 
 hop_ratio=${1:-4321}
@@ -20,22 +20,22 @@ fi
 algorithm=grpo_batch
 grpo_group_size=1
 reward_group_size=5
-model=/input/model
+model=/input/model/Qwen2-5-3b
 model_name=$(basename "$model" | tr '[:upper:]' '[:lower:]')
 
 CONFIG_PATH="$(pwd)/config"
 TOOL_CONFIG="$CONFIG_PATH/search_tool_config.yaml"
 
-TRAIN_DATA="/input/data/zero_ratio${hop_ratio}.parquet"
-VAL_DATA="/input/data/test.parquet"
+TRAIN_DATA="/input/data/Drzero/zero_ratio${hop_ratio}.parquet"
+VAL_DATA="/input/data/Drzero/test.parquet"
 
 
 # source activate llm;
 
 python search/retrieval_server.py \
-    --index_path='/input/corpus/e5_Flat.index' \
-    --corpus_path='/input/corpus/wiki-18.jsonl' \
-    --retriever_model='intfloat/e5-base-v2' \
+    --index_path='/input/data/Drzero/corpus/e5_Flat.index' \
+    --corpus_path='/input/data/Drzero/corpus/wiki-18.jsonl' \
+    --retriever_model='/input/model/e5-base-v2' \
     --retriever_name='e5' \
     --faiss_gpu \
     --topk 3 &

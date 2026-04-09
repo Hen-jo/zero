@@ -1,6 +1,6 @@
 # Start from the verl base image
 # Dockerfile.base
-FROM verlai/verl:base-verl0.5-cu126-cudnn9.8-torch2.7.1-fa2.8.0
+FROM nvcr.io/nvidia/pytorch:25.04-py3
 
 # Define environments
 ENV MAX_JOBS=8

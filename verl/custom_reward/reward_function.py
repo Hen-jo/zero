@@ -14,7 +14,9 @@ from verl import DataProto
 from verl.utils.model import compute_position_id_with_mask
 import verl.utils.torch_functional as verl_F
 
-from verl.custom_reward.reward_rollout import MultiTurnRewardRollout
+# MultiTurnRewardRollout은 임포트 시점에 sglang 전체를 로드하고
+# triton이 CUDA 드라이버를 초기화하려 함. Ray CPU worker에는 CUDA가 없으므로
+# 모듈 레벨 임포트를 피하고 함수 내부에서 지연 임포트함.
 from verl.prompts import *
 
 
@@ -233,6 +235,7 @@ def compute_challenger_score_batch(data_sources, solution_strs, ground_truths, e
     gen_batch = gen_batch.repeat(repeat_times=group_size, interleave=True)
 
     async def _compute_with_rollout():
+        from verl.custom_reward.reward_rollout import MultiTurnRewardRollout  # lazy: avoid triton CUDA init in CPU workers
         async with MultiTurnRewardRollout(
             config=rollout_config,
             processing_class=processing_class,

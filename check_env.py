@@ -14,15 +14,19 @@ INFO = "\033[94m[INFO]\033[0m"
 
 results = []
 
-def check(name, fn):
+def check(name, fn, optional=False):
     try:
         info = fn()
         msg = f"{PASS} {name}" + (f" — {info}" if info else "")
         print(msg)
         results.append((name, True, None))
     except Exception as e:
-        print(f"{FAIL} {name} — {type(e).__name__}: {e}")
-        results.append((name, False, str(e)))
+        if optional:
+            print(f"{WARN} {name} — {type(e).__name__}: {e}")
+            results.append((name, True, f"optional: {e}"))
+        else:
+            print(f"{FAIL} {name} — {type(e).__name__}: {e}")
+            results.append((name, False, str(e)))
 
 # ── 1. Python ────────────────────────────────────────────────────────────────
 check("Python version", lambda: f"{sys.version.split()[0]} (expect 3.10)")
@@ -58,12 +62,7 @@ check("flash-attn", check_flash_attn)
 def check_flashinfer():
     import flashinfer
     return f"v{flashinfer.__version__}"
-try:
-    check("flashinfer", check_flashinfer)
-except Exception:
-    # flashinfer 없으면 warn만
-    print(f"{WARN} flashinfer — not installed (sglang will fall back to triton attention)")
-    results.append(("flashinfer", True, "optional"))  # warn이지 fail 아님
+check("flashinfer (optional)", check_flashinfer, optional=True)
 
 # ── 5. faiss ─────────────────────────────────────────────────────────────────
 def check_faiss():
@@ -143,11 +142,7 @@ def check_sglang_server():
             return f"HTTP {r.status} — sglang server running"
     except urllib.error.URLError:
         raise RuntimeError("server not running (학습 시작 전엔 정상)")
-try:
-    check("sglang server (port 8001)", check_sglang_server)
-except Exception:
-    print(f"{INFO} sglang server — not running (학습 시 iter1_challenger.sh가 기동)")
-    results.append(("sglang server", True, "optional"))
+check("sglang server (port 8001, optional)", check_sglang_server, optional=True)
 
 # ── 14. retrieval server 연결 확인 ────────────────────────────────────────────
 def check_retrieval_server():
@@ -163,11 +158,7 @@ def check_retrieval_server():
             return f"HTTP {r.status} — retrieval server running"
     except urllib.error.URLError:
         raise RuntimeError("server not running (학습 시작 전엔 정상)")
-try:
-    check("retrieval server (port 8000)", check_retrieval_server)
-except Exception:
-    print(f"{INFO} retrieval server — not running (학습 시 iter1_challenger.sh가 기동)")
-    results.append(("retrieval server", True, "optional"))
+check("retrieval server (port 8000, optional)", check_retrieval_server, optional=True)
 
 # ── 결과 요약 ─────────────────────────────────────────────────────────────────
 print()

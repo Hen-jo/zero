@@ -26,6 +26,14 @@ from typing import Any, List, Optional, Tuple
 from uuid import uuid4
 
 import numpy as np
+
+# Triton compatibility: older triton (<2.2) lacks default_dump_dir which sglang 0.4.x requires
+import triton.runtime.cache as _triton_cache
+if not hasattr(_triton_cache, "default_dump_dir"):
+    import tempfile
+    _triton_cache.default_dump_dir = lambda: tempfile.gettempdir() + "/triton/dump"
+del _triton_cache
+
 import sglang.srt.entrypoints.engine
 import torch
 import torch.distributed as dist
@@ -43,10 +51,14 @@ from sglang.srt.utils import (
     get_ip,
     get_open_port,
     is_cuda,
-    maybe_set_triton_cache_manager,
     set_prometheus_multiproc_dir,
     set_ulimit,
 )
+try:
+    from sglang.srt.utils import maybe_set_triton_cache_manager
+except ImportError:
+    def maybe_set_triton_cache_manager():
+        pass  # no-op for older sglang versions
 from tensordict import TensorDict
 from torch.distributed.device_mesh import DeviceMesh, init_device_mesh
 from torch.nn.utils.rnn import pad_sequence

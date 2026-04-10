@@ -27,12 +27,18 @@ from uuid import uuid4
 
 import numpy as np
 
-# Triton compatibility: older triton (<2.2) lacks default_dump_dir which sglang 0.4.x requires
+# Triton compatibility: older triton (<2.2) lacks several functions that sglang 0.4.x requires
+import os as _os, tempfile as _tmp
 import triton.runtime.cache as _triton_cache
-if not hasattr(_triton_cache, "default_dump_dir"):
-    import tempfile
-    _triton_cache.default_dump_dir = lambda: tempfile.gettempdir() + "/triton/dump"
-del _triton_cache
+_triton_base = _os.path.join(_os.environ.get("HOME", _tmp.gettempdir()), ".triton")
+for _name, _val in [
+    ("default_dump_dir",     lambda: _os.path.join(_triton_base, "dump")),
+    ("default_override_dir", lambda: _os.path.join(_triton_base, "override")),
+    ("default_cache_dir",    lambda: _os.path.join(_triton_base, "cache")),
+]:
+    if not hasattr(_triton_cache, _name):
+        setattr(_triton_cache, _name, _val)
+del _triton_cache, _triton_base, _name, _val, _os, _tmp
 
 import sglang.srt.entrypoints.engine
 import torch

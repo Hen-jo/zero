@@ -1,15 +1,93 @@
-torchdata
-torchvision
-huggingface_hub
-uvicorn[standard]>=0.29.0
-scipy>=1.12.0
-tqdm>=4.66.0
-einops
-tensorboard
-pyzmq
-httpx>=0.27.0
-openai>=1.0.0
-pyserini
+# Dr. Zero requirements
+# Python >= 3.10, Linux, CUDA >= 12.4
+#
+# Usage:
+#   pip install torch==2.6.0 --index-url https://download.pytorch.org/whl/cu124
+#   pip install -r requirements.txt
+#   pip install verl==0.5.0
+#   # Then the build-from-source packages at the bottom
+
+# ── Core ML ──────────────────────────────────────────────────────────────────
+transformers>=4.51.0
+accelerate
+peft
+datasets
+tokenizers
+sentencepiece
+
+# ── Numerical / Data ─────────────────────────────────────────────────────────
+numpy<2.0.0
+pandas
+pyarrow>=19.0.1
+scipy
+
+# ── Distributed Training ─────────────────────────────────────────────────────
+tensordict==0.6.2
+ray[default]
+
+# ── Search / Retrieval ───────────────────────────────────────────────────────
+faiss-gpu
+sentence-transformers
+
+# ── Serving (retrieval/rerank/search servers) ────────────────────────────────
+fastapi[standard]>=0.115.0
+uvicorn[standard]
+pydantic>=2.9
+grpcio>=1.62.1
+aiohttp
+requests
+
+# ── Google Search server (optional) ──────────────────────────────────────────
+google-api-python-client
+chardet
+beautifulsoup4
+
+# ── Training / Config ─────────────────────────────────────────────────────────
+hydra-core
 omegaconf
+wandb
+codetiming
+optree>=0.13.0
+packaging
+dill
+
+# ── Inference (sglang) ────────────────────────────────────────────────────────
+# flashinfer은 pip install이 아니라 setup.sh에서 --no-build-isolation으로 설치해야 함
+# flashinfer-python==0.2.6.post1
+#
+# sglang[all]은 vllm을 의존성으로 끌어들여 CUDA 커널 빌드 실패 유발 → [srt] 사용
+sglang[srt]==0.4.8
+torch-memory-saver
+xgrammar
+
+# ── GPU Kernels ───────────────────────────────────────────────────────────────
+liger-kernel
+nvidia-cudnn-cu12==9.8.0.87
+nvidia-ml-py>=12.560.30
+
+# ── Misc utilities ────────────────────────────────────────────────────────────
+tqdm
+hf-transfer
+blobfile
+pylatexenc
 qwen-vl-utils
-wandb==0.24.0
+mathruler
+pyext
+mbridge
+
+# ── Dev / Test ────────────────────────────────────────────────────────────────
+pytest
+ruff
+pre-commit
+
+# ── BM25 retrieval (optional, requires Java 11+) ─────────────────────────────
+# pyserini
+
+# ── Build from source (run separately, order matters) ────────────────────────
+# NVTE_FRAMEWORK=pytorch pip install --no-deps --no-build-isolation \
+#     git+https://github.com/NVIDIA/TransformerEngine.git@v2.3
+#
+# pip install --no-deps --no-build-isolation \
+#     git+https://github.com/NVIDIA/Megatron-LM.git@core_v0.12.2
+#
+# pip install verl==0.5.0

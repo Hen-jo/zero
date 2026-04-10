@@ -6,11 +6,11 @@ set -x
 kill -9 $(lsof -t -i :8000);
 kill -9 $(lsof -t -i :8001);
 
-tp=1
-dp=4
+tp=1   # Qwen2.5-3B ≈ 6GB FP16 → A100 한 장에 충분, TP 불필요
+dp=4   # A100 4개 → dp=4 (GPU당 sglang 서버 1개)
 gpus=4
-batch_per_gpu=1
-rollout_memory_utilization=0.25
+batch_per_gpu=2
+rollout_memory_utilization=0.4
 
 hop_ratio=${1:-4321}
 if [ $# -ge 1 ]; then

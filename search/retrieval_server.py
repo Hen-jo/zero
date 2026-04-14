@@ -219,14 +219,20 @@ class BM25Retriever(BaseRetriever):
 class DenseRetriever(BaseRetriever):
     def __init__(self, config):
         super().__init__(config)
+        print(f"[DenseRetriever] FAISS 인덱스 로딩: {self.index_path}", flush=True)
         self.index = faiss.read_index(self.index_path)
+        print(f"[DenseRetriever] FAISS 인덱스 로딩 완료", flush=True)
         if config.faiss_gpu:
+            print("[DenseRetriever] FAISS 인덱스 GPU 전송 중...", flush=True)
             co = faiss.GpuMultipleClonerOptions()
             co.useFloat16 = True
             co.shard = True
             self.index = faiss.index_cpu_to_all_gpus(self.index, co=co)
+            print("[DenseRetriever] FAISS GPU 전송 완료", flush=True)
 
+        print(f"[DenseRetriever] corpus 로딩: {self.corpus_path}", flush=True)
         self.corpus = load_corpus(self.corpus_path)
+        print(f"[DenseRetriever] corpus 로딩 완료", flush=True)
         self.encoder = Encoder(
             model_name = self.retrieval_method,
             model_path = config.retrieval_model_path,
@@ -402,7 +408,9 @@ if __name__ == "__main__":
     )
 
     # 2) Instantiate a global retriever so it is loaded once and reused.
+    print("[retrieval_server] retriever 초기화 시작...", flush=True)
     retriever = get_retriever(config)
-    
+    print("[retrieval_server] retriever 초기화 완료. uvicorn 시작...", flush=True)
+
     # 3) Launch the server with access logging disabled
     uvicorn.run(app, host="0.0.0.0", port=8000, access_log=False)

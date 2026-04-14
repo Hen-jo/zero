@@ -34,7 +34,7 @@ VAL_DATA="/input/data/Drzero/test.parquet"
 
 # source activate llm;
 
-python search/retrieval_server.py \
+PYTHONUNBUFFERED=1 python search/retrieval_server.py \
     --index_path='/input/data/Drzero/corpus/e5_Flat.index' \
     --corpus_path='/input/data/Drzero/corpus/wiki-18.jsonl' \
     --retriever_model='/input/model/e5-base-v2' \

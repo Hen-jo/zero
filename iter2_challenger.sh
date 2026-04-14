@@ -26,27 +26,26 @@ fi
 algorithm=grpo_batch
 grpo_group_size=1
 reward_group_size=5
-model=Qwen/Qwen2.5-3B-Instruct
+model=/input/model/Qwen2-5-3b
 model_name=$(basename "$model" | tr '[:upper:]' '[:lower:]')
 
-CONFIG_PATH="./config"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CONFIG_PATH="$SCRIPT_DIR/config"
 TOOL_CONFIG="$CONFIG_PATH/search_tool_config.yaml"
 
-TRAIN_DATA="./data/zero_ratio${hop_ratio}.parquet"
-VAL_DATA="./data/test.parquet"
+TRAIN_DATA="/input/data/Drzero/zero_ratio${hop_ratio}.parquet"
+VAL_DATA="/input/data/Drzero/test.parquet"
 
 SOLVER_NAME="solver_iter${prev_iter}_hf"
 CHALLENGER_NAME="challenger_iter${cur_iter}_ratio${hop_ratio}_${algorithm}_group${grpo_group_size}-${reward_group_size}_${model_name}"
-SOLVER_PATH="./checkpoints/dr-zero/solver_iter${prev_iter}_ratio${hop_ratio}_${solver_algorithm}_group${solver_grpo_group_size}_${model_name}/${SOLVER_NAME}"
-RESUME_PATH="./checkpoints/dr-zero/challenger_iter${prev_iter}_ratio${hop_ratio}_${algorithm}_group${grpo_group_size}-${reward_group_size}_${model_name}/global_step_50"
+SOLVER_PATH="$SCRIPT_DIR/checkpoints/dr-zero/solver_iter${prev_iter}_ratio${hop_ratio}_${solver_algorithm}_group${solver_grpo_group_size}_${model_name}/${SOLVER_NAME}"
+RESUME_PATH="$SCRIPT_DIR/checkpoints/dr-zero/challenger_iter${prev_iter}_ratio${hop_ratio}_${algorithm}_group${grpo_group_size}-${reward_group_size}_${model_name}/global_step_50"
 
-
-source activate llm;
 
 python search/retrieval_server.py \
-    --index_path='./corpus/e5_Flat.index' \
-    --corpus_path='./corpus/wiki-18.jsonl' \
-    --retriever_model='intfloat/e5-base-v2' \
+    --index_path='/input/data/Drzero/corpus/e5_Flat.index' \
+    --corpus_path='/input/data/Drzero/corpus/wiki-18.jsonl' \
+    --retriever_model='/input/model/e5-base-v2' \
     --retriever_name='e5' \
     --faiss_gpu \
     --topk 3 &
@@ -95,7 +94,7 @@ python -m verl.trainer.main_ppo \
     custom_reward_function.reward_kwargs.model_name=$SOLVER_NAME \
     custom_reward_function.reward_kwargs.base_url="http://127.0.0.1:8001" \
     custom_reward_function.reward_kwargs.reward_rollout_n=${reward_group_size} \
-    trainer.logger='["wandb", "console"]' \
+    trainer.logger='["console"]' \
     trainer.project_name="dr-zero" \
     trainer.experiment_name=$CHALLENGER_NAME \
     trainer.resume_mode="resume_path" \

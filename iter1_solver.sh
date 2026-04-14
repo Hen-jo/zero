@@ -22,26 +22,27 @@ fi
 
 algorithm=grpo
 grpo_group_size=5
-model=/input/model
+model=/input/model/Qwen2-5-3b
 model_name=$(basename "$model" | tr '[:upper:]' '[:lower:]')
 
-CONFIG_PATH="./config"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CONFIG_PATH="$SCRIPT_DIR/config"
 TOOL_CONFIG="$CONFIG_PATH/search_tool_config.yaml"
 
 CHALLENGER_NAME="challenger_iter1_ratio${hop_ratio}_${challenger_algorithm}_group${challenger_grpo_group_size}-${challenger_reward_group_size}_${model_name}"
 SOLVER_NAME="solver_iter1_ratio${hop_ratio}_${algorithm}_group${grpo_group_size}_${model_name}"
 
-TRAIN_DATA="./data/zero_${CHALLENGER_NAME}.parquet"
-VAL_DATA_DIR="./data/${SOLVER_NAME}"
-VAL_DATA="./data/test_1200.parquet"
+TRAIN_DATA="$SCRIPT_DIR/data/zero_${CHALLENGER_NAME}.parquet"
+VAL_DATA_DIR="$SCRIPT_DIR/data/${SOLVER_NAME}"
+VAL_DATA="/input/data/Drzero/test.parquet"
 
 
 # source activate llm;
 
 python search/retrieval_server.py \
-    --index_path='./corpus/e5_Flat.index' \
-    --corpus_path='./corpus/wiki-18.jsonl' \
-    --retriever_model='intfloat/e5-base-v2' \
+    --index_path='/input/data/Drzero/corpus/e5_Flat.index' \
+    --corpus_path='/input/data/Drzero/corpus/wiki-18.jsonl' \
+    --retriever_model='/input/model/e5-base-v2' \
     --retriever_name='e5' \
     --faiss_gpu \
     --topk 3 &
@@ -73,7 +74,7 @@ python -m verl.trainer.main_ppo \
     actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu=${batch_per_gpu} \
     actor_rollout_ref.actor.use_kl_loss=False \
     actor_rollout_ref.rollout.multi_turn.tool_config_path="$TOOL_CONFIG" \
-    trainer.logger='["wandb", "console"]' \
+    trainer.logger='["console"]' \
     trainer.project_name="dr-zero" \
     trainer.experiment_name=$SOLVER_NAME \
     trainer.n_gpus_per_node=${gpus} \

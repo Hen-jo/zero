@@ -53,28 +53,43 @@ python -m sglang.launch_server \
     --log-level=error > /tmp/sglang_server.log 2>&1 &
 SGLANG_PID=$!
 
-echo "[INFO] retrieval server 대기 중 (port 8000)..."
+WAIT_TIMEOUT=600  # 최대 10분 대기
+
+echo "[INFO] retrieval server 대기 중 (port 8000, 최대 ${WAIT_TIMEOUT}초)..."
+ELAPSED=0
 until bash -c "echo > /dev/tcp/127.0.0.1/8000" 2>/dev/null; do
     if ! kill -0 $RETRIEVAL_PID 2>/dev/null; then
         echo "[ERROR] retrieval server 프로세스가 종료됨. 로그:"
         cat /tmp/retrieval_server.log
         exit 1
     fi
-    echo "[INFO] retrieval server 아직 준비 안 됨, 5초 후 재시도... (최근 로그:)"
-    tail -3 /tmp/retrieval_server.log 2>/dev/null || true
+    if [ $ELAPSED -ge $WAIT_TIMEOUT ]; then
+        echo "[ERROR] retrieval server ${WAIT_TIMEOUT}초 내에 시작되지 않음. 로그:"
+        cat /tmp/retrieval_server.log
+        exit 1
+    fi
+    echo "[INFO] retrieval server 아직 준비 안 됨, 5초 후 재시도... (${ELAPSED}/${WAIT_TIMEOUT}초)"
     sleep 5
+    ELAPSED=$((ELAPSED + 5))
 done
 echo "[INFO] retrieval server 준비 완료"
 
-echo "[INFO] sglang server 대기 중 (port 8001)..."
+echo "[INFO] sglang server 대기 중 (port 8001, 최대 ${WAIT_TIMEOUT}초)..."
+ELAPSED=0
 until bash -c "echo > /dev/tcp/127.0.0.1/8001" 2>/dev/null; do
     if ! kill -0 $SGLANG_PID 2>/dev/null; then
         echo "[ERROR] sglang server 프로세스가 종료됨. 로그:"
         cat /tmp/sglang_server.log
         exit 1
     fi
-    echo "[INFO] sglang server 아직 준비 안 됨, 5초 후 재시도..."
+    if [ $ELAPSED -ge $WAIT_TIMEOUT ]; then
+        echo "[ERROR] sglang server ${WAIT_TIMEOUT}초 내에 시작되지 않음. 로그:"
+        cat /tmp/sglang_server.log
+        exit 1
+    fi
+    echo "[INFO] sglang server 아직 준비 안 됨, 5초 후 재시도... (${ELAPSED}/${WAIT_TIMEOUT}초)"
     sleep 5
+    ELAPSED=$((ELAPSED + 5))
 done
 echo "[INFO] sglang server 준비 완료"
 

@@ -40,7 +40,8 @@ python search/retrieval_server.py \
     --retriever_model='/input/model/e5-base-v2' \
     --retriever_name='e5' \
     --faiss_gpu \
-    --topk 3 &
+    --topk 3 > /tmp/retrieval_server.log 2>&1 &
+RETRIEVAL_PID=$!
 
 python -m sglang.launch_server \
     --model=${model} \
@@ -49,10 +50,16 @@ python -m sglang.launch_server \
     --mem-fraction-static=${rollout_memory_utilization} \
     --dp-size=${dp} \
     --tp-size=${tp} \
-    --log-level=error &
+    --log-level=error > /tmp/sglang_server.log 2>&1 &
+SGLANG_PID=$!
 
 echo "[INFO] retrieval server 대기 중 (port 8000)..."
 until bash -c "echo > /dev/tcp/127.0.0.1/8000" 2>/dev/null; do
+    if ! kill -0 $RETRIEVAL_PID 2>/dev/null; then
+        echo "[ERROR] retrieval server 프로세스가 종료됨. 로그:"
+        cat /tmp/retrieval_server.log
+        exit 1
+    fi
     echo "[INFO] retrieval server 아직 준비 안 됨, 5초 후 재시도..."
     sleep 5
 done
@@ -60,6 +67,11 @@ echo "[INFO] retrieval server 준비 완료"
 
 echo "[INFO] sglang server 대기 중 (port 8001)..."
 until bash -c "echo > /dev/tcp/127.0.0.1/8001" 2>/dev/null; do
+    if ! kill -0 $SGLANG_PID 2>/dev/null; then
+        echo "[ERROR] sglang server 프로세스가 종료됨. 로그:"
+        cat /tmp/sglang_server.log
+        exit 1
+    fi
     echo "[INFO] sglang server 아직 준비 안 됨, 5초 후 재시도..."
     sleep 5
 done

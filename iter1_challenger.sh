@@ -6,9 +6,9 @@ set -x
 kill -9 $(lsof -t -i :8000);
 kill -9 $(lsof -t -i :8001);
 
-tp=1   # Qwen2.5-3B ≈ 6GB FP16 → A100 한 장에 충분, TP 불필요
+tp=2   # Qwen2.5-3B ≈ 6GB FP16 → A100 한 장에 충분, TP 불필요
 dp=4   # A100 4개 → dp=4 (GPU당 sglang 서버 1개)
-gpus=4
+gpus=8
 batch_per_gpu=2
 rollout_memory_utilization=0.4
 
@@ -51,7 +51,19 @@ python -m sglang.launch_server \
     --tp-size=${tp} \
     --log-level=error &
 
-sleep 30
+echo "[INFO] retrieval server 대기 중 (port 8000)..."
+until bash -c "echo > /dev/tcp/127.0.0.1/8000" 2>/dev/null; do
+    echo "[INFO] retrieval server 아직 준비 안 됨, 5초 후 재시도..."
+    sleep 5
+done
+echo "[INFO] retrieval server 준비 완료"
+
+echo "[INFO] sglang server 대기 중 (port 8001)..."
+until bash -c "echo > /dev/tcp/127.0.0.1/8001" 2>/dev/null; do
+    echo "[INFO] sglang server 아직 준비 안 됨, 5초 후 재시도..."
+    sleep 5
+done
+echo "[INFO] sglang server 준비 완료"
 
 python -m verl.trainer.main_ppo \
     --config-path="$CONFIG_PATH" \

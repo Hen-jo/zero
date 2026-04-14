@@ -61,7 +61,19 @@ python -m sglang.launch_server \
     --tp-size=${tp} \
     --log-level=error &
 
-sleep 30
+echo "[INFO] retrieval server 대기 중 (port 8000)..."
+until bash -c "echo > /dev/tcp/127.0.0.1/8000" 2>/dev/null; do
+    echo "[INFO] retrieval server 아직 준비 안 됨, 5초 후 재시도..."
+    sleep 5
+done
+echo "[INFO] retrieval server 준비 완료"
+
+echo "[INFO] sglang server 대기 중 (port 8001)..."
+until bash -c "echo > /dev/tcp/127.0.0.1/8001" 2>/dev/null; do
+    echo "[INFO] sglang server 아직 준비 안 됨, 5초 후 재시도..."
+    sleep 5
+done
+echo "[INFO] sglang server 준비 완료"
 
 python -m verl.trainer.main_ppo \
     --config-path=$CONFIG_PATH \

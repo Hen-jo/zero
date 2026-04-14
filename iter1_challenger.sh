@@ -60,7 +60,8 @@ until bash -c "echo > /dev/tcp/127.0.0.1/8000" 2>/dev/null; do
         cat /tmp/retrieval_server.log
         exit 1
     fi
-    echo "[INFO] retrieval server 아직 준비 안 됨, 5초 후 재시도..."
+    echo "[INFO] retrieval server 아직 준비 안 됨, 5초 후 재시도... (최근 로그:)"
+    tail -3 /tmp/retrieval_server.log 2>/dev/null || true
     sleep 5
 done
 echo "[INFO] retrieval server 준비 완료"

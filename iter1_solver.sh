@@ -26,14 +26,15 @@ model=/input/model/Qwen2-5-3b
 model_name=$(basename "$model" | tr '[:upper:]' '[:lower:]')
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+OUTPUT_DIR=/input/output/zero
 CONFIG_PATH="$SCRIPT_DIR/config"
 TOOL_CONFIG="$CONFIG_PATH/search_tool_config.yaml"
 
 CHALLENGER_NAME="challenger_iter1_ratio${hop_ratio}_${challenger_algorithm}_group${challenger_grpo_group_size}-${challenger_reward_group_size}_${model_name}"
 SOLVER_NAME="solver_iter1_ratio${hop_ratio}_${algorithm}_group${grpo_group_size}_${model_name}"
 
-TRAIN_DATA="$SCRIPT_DIR/data/zero_${CHALLENGER_NAME}.parquet"
-VAL_DATA_DIR="$SCRIPT_DIR/data/${SOLVER_NAME}"
+TRAIN_DATA="$OUTPUT_DIR/data/zero_${CHALLENGER_NAME}.parquet"
+VAL_DATA_DIR="$OUTPUT_DIR/data/${SOLVER_NAME}"
 VAL_DATA="/input/data/Drzero/test.parquet"
 
 
@@ -74,9 +75,10 @@ python -m verl.trainer.main_ppo \
     actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu=${batch_per_gpu} \
     actor_rollout_ref.actor.use_kl_loss=False \
     actor_rollout_ref.rollout.multi_turn.tool_config_path="$TOOL_CONFIG" \
-    trainer.logger='["console"]' \
+    trainer.logger='["console", "tensorboard"]' \
     trainer.project_name="dr-zero" \
     trainer.experiment_name=$SOLVER_NAME \
+    trainer.default_local_dir=$OUTPUT_DIR/checkpoints \
     trainer.n_gpus_per_node=${gpus} \
     trainer.nnodes=1 \
     trainer.save_freq=25 \

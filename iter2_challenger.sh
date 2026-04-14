@@ -30,6 +30,7 @@ model=/input/model/Qwen2-5-3b
 model_name=$(basename "$model" | tr '[:upper:]' '[:lower:]')
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+OUTPUT_DIR=/input/output/zero
 CONFIG_PATH="$SCRIPT_DIR/config"
 TOOL_CONFIG="$CONFIG_PATH/search_tool_config.yaml"
 
@@ -38,8 +39,8 @@ VAL_DATA="/input/data/Drzero/test.parquet"
 
 SOLVER_NAME="solver_iter${prev_iter}_hf"
 CHALLENGER_NAME="challenger_iter${cur_iter}_ratio${hop_ratio}_${algorithm}_group${grpo_group_size}-${reward_group_size}_${model_name}"
-SOLVER_PATH="$SCRIPT_DIR/checkpoints/dr-zero/solver_iter${prev_iter}_ratio${hop_ratio}_${solver_algorithm}_group${solver_grpo_group_size}_${model_name}/${SOLVER_NAME}"
-RESUME_PATH="$SCRIPT_DIR/checkpoints/dr-zero/challenger_iter${prev_iter}_ratio${hop_ratio}_${algorithm}_group${grpo_group_size}-${reward_group_size}_${model_name}/global_step_50"
+SOLVER_PATH="$OUTPUT_DIR/checkpoints/dr-zero/solver_iter${prev_iter}_ratio${hop_ratio}_${solver_algorithm}_group${solver_grpo_group_size}_${model_name}/${SOLVER_NAME}"
+RESUME_PATH="$OUTPUT_DIR/checkpoints/dr-zero/challenger_iter${prev_iter}_ratio${hop_ratio}_${algorithm}_group${grpo_group_size}-${reward_group_size}_${model_name}/global_step_50"
 
 
 python search/retrieval_server.py \
@@ -94,9 +95,10 @@ python -m verl.trainer.main_ppo \
     custom_reward_function.reward_kwargs.model_name=$SOLVER_NAME \
     custom_reward_function.reward_kwargs.base_url="http://127.0.0.1:8001" \
     custom_reward_function.reward_kwargs.reward_rollout_n=${reward_group_size} \
-    trainer.logger='["console"]' \
+    trainer.logger='["console", "tensorboard"]' \
     trainer.project_name="dr-zero" \
     trainer.experiment_name=$CHALLENGER_NAME \
+    trainer.default_local_dir=$OUTPUT_DIR/checkpoints \
     trainer.resume_mode="resume_path" \
     trainer.resume_from_path=$RESUME_PATH \
     trainer.n_gpus_per_node=${gpus} \

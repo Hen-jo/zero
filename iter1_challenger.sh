@@ -23,9 +23,11 @@ reward_group_size=5
 model=/input/model/Qwen2-5-3b
 model_name=$(basename "$model" | tr '[:upper:]' '[:lower:]')
 
-CONFIG_PATH="$(pwd)/config"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CONFIG_PATH="$SCRIPT_DIR/config"
 TOOL_CONFIG="$CONFIG_PATH/search_tool_config.yaml"
 
+OUTPUT_DIR=/input/output/zero
 TRAIN_DATA="/input/data/Drzero/zero_ratio${hop_ratio}.parquet"
 VAL_DATA="/input/data/Drzero/test.parquet"
 
@@ -83,9 +85,10 @@ python -m verl.trainer.main_ppo \
     custom_reward_function.reward_kwargs.model_name=${model} \
     custom_reward_function.reward_kwargs.base_url="http://127.0.0.1:8001" \
     custom_reward_function.reward_kwargs.reward_rollout_n=${reward_group_size} \
-    trainer.logger='["wandb", "console"]' \
+    trainer.logger='["console", "tensorboard"]' \
     trainer.project_name="dr-zero" \
     trainer.experiment_name="challenger_iter1_ratio${hop_ratio}_${algorithm}_group${grpo_group_size}-${reward_group_size}_${model_name}" \
+    trainer.default_local_dir=$OUTPUT_DIR/checkpoints \
     trainer.n_gpus_per_node=${gpus} \
     trainer.nnodes=1 \
     trainer.save_freq=25 \

@@ -26,7 +26,8 @@ challenger_step=150
 data_partition=3
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-EXP_DIR="$SCRIPT_DIR/checkpoints/dr-zero"
+OUTPUT_DIR=/input/output/zero
+EXP_DIR="$OUTPUT_DIR/checkpoints/dr-zero"
 MODEL_PATH="challenger_iter3_ratio${hop_ratio}_${algorithm}_group${grpo_group_size}-${reward_group_size}_${model_name}"
 CKPT_PATH="${EXP_DIR}/${MODEL_PATH}/global_step_${challenger_step}"
 
@@ -34,7 +35,7 @@ CONFIG_PATH="$SCRIPT_DIR/config"
 TOOL_CONFIG="$CONFIG_PATH/search_tool_config.yaml"
 
 TRAIN_DATA="/input/data/Drzero/zero_ratio${hop_ratio}.parquet"
-TRAIN_DATA_OUT="$SCRIPT_DIR/data/zero_${MODEL_PATH}.parquet"
+TRAIN_DATA_OUT="$OUTPUT_DIR/data/zero_${MODEL_PATH}.parquet"
 
 
 python search/retrieval_server.py \

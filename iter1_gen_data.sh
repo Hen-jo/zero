@@ -19,27 +19,28 @@ fi
 algorithm=grpo_batch
 grpo_group_size=1
 reward_group_size=5
-model=/input/model
+model=/input/model/Qwen2-5-3b
 model_name=$(basename "$model" | tr '[:upper:]' '[:lower:]')
 
 challenger_step=50
 data_partition=1
 
-EXP_DIR="checkpoints/dr-zero"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+EXP_DIR="$SCRIPT_DIR/checkpoints/dr-zero"
 MODEL_PATH="challenger_iter1_ratio${hop_ratio}_${algorithm}_group${grpo_group_size}-${reward_group_size}_${model_name}"
 CKPT_PATH="${EXP_DIR}/${MODEL_PATH}/global_step_${challenger_step}"
 
-CONFIG_PATH="./config"
+CONFIG_PATH="$SCRIPT_DIR/config"
 TOOL_CONFIG="$CONFIG_PATH/search_tool_config.yaml"
 
-TRAIN_DATA="/input/data/zero_ratio${hop_ratio}.parquet"
-TRAIN_DATA_OUT="/input/data/zero_${MODEL_PATH}.parquet"
+TRAIN_DATA="/input/data/Drzero/zero_ratio${hop_ratio}.parquet"
+TRAIN_DATA_OUT="$SCRIPT_DIR/data/zero_${MODEL_PATH}.parquet"
 
 
 python search/retrieval_server.py \
-    --index_path='/input/corpus/e5_Flat.index' \
-    --corpus_path='/input/corpus/wiki-18.jsonl' \
-    --retriever_model='intfloat/e5-base-v2' \
+    --index_path='/input/data/Drzero/corpus/e5_Flat.index' \
+    --corpus_path='/input/data/Drzero/corpus/wiki-18.jsonl' \
+    --retriever_model='/input/model/e5-base-v2' \
     --retriever_name='e5' \
     --faiss_gpu \
     --topk 3 &

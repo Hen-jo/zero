@@ -47,6 +47,7 @@ PYTHONUNBUFFERED=1 python $SCRIPT_DIR/search/retrieval_server.py \
     --corpus_path='/input/data/Drzero/corpus/wiki-18.jsonl' \
     --retriever_model='/input/model/e5-base-v2' \
     --retriever_name='e5' \
+    --faiss_gpu \
     --topk 3 > /tmp/retrieval_server.log 2>&1 &
 RETRIEVAL_PID=$!
 
@@ -56,8 +57,8 @@ wait_for_port() {
         if ! kill -0 $pid 2>/dev/null; then
             echo "[$(date '+%H:%M:%S')] [ERROR] port ${port} 서버 종료됨. 로그:"; cat $log; exit 1
         fi
-        if [ $elapsed -ge 600 ]; then
-            echo "[$(date '+%H:%M:%S')] [ERROR] port ${port} 서버 600초 내 미시작. 로그:"; cat $log; exit 1
+        if [ $elapsed -ge 1200 ]; then
+            echo "[$(date '+%H:%M:%S')] [ERROR] port ${port} 서버 1200초 내 미시작. 로그:"; cat $log; exit 1
         fi
         if [ $((elapsed % 60)) -eq 0 ] && [ $elapsed -gt 0 ]; then
             echo "[$(date '+%H:%M:%S')] [INFO] port ${port} 대기 중 (${elapsed}초 경과), 최근 로그:"

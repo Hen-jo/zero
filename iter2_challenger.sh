@@ -43,14 +43,38 @@ SOLVER_PATH="$OUTPUT_DIR/checkpoints/dr-zero/solver_iter${prev_iter}_ratio${hop_
 RESUME_PATH="$OUTPUT_DIR/checkpoints/dr-zero/challenger_iter${prev_iter}_ratio${hop_ratio}_${algorithm}_group${grpo_group_size}-${reward_group_size}_${model_name}/global_step_50"
 
 
-python search/retrieval_server.py \
+# retrieval server를 먼저 띄우고 완전히 뜬 뒤 sglang 시작 (GPU 경쟁 방지)
+PYTHONUNBUFFERED=1 python search/retrieval_server.py \
     --index_path='/input/data/Drzero/corpus/e5_Flat.index' \
     --corpus_path='/input/data/Drzero/corpus/wiki-18.jsonl' \
     --retriever_model='/input/model/e5-base-v2' \
     --retriever_name='e5' \
     --faiss_gpu \
-    --topk 3 &
+    --topk 3 > /tmp/retrieval_server.log 2>&1 &
+RETRIEVAL_PID=$!
 
+WAIT_TIMEOUT=600
+
+echo "[INFO] retrieval server 대기 중 (port 8000, 최대 ${WAIT_TIMEOUT}초)..."
+ELAPSED=0
+until bash -c "echo > /dev/tcp/127.0.0.1/8000" 2>/dev/null; do
+    if ! kill -0 $RETRIEVAL_PID 2>/dev/null; then
+        echo "[ERROR] retrieval server 프로세스가 종료됨. 로그:"
+        cat /tmp/retrieval_server.log
+        exit 1
+    fi
+    if [ $ELAPSED -ge $WAIT_TIMEOUT ]; then
+        echo "[ERROR] retrieval server ${WAIT_TIMEOUT}초 내에 시작되지 않음. 로그:"
+        cat /tmp/retrieval_server.log
+        exit 1
+    fi
+    echo "[INFO] retrieval server 아직 준비 안 됨, 5초 후 재시도... (${ELAPSED}/${WAIT_TIMEOUT}초)"
+    sleep 5
+    ELAPSED=$((ELAPSED + 5))
+done
+echo "[INFO] retrieval server 준비 완료"
+
+# retrieval server 뜬 후 sglang 시작
 python -m sglang.launch_server \
     --model=$SOLVER_PATH \
     --served-model-name=$SOLVER_NAME \
@@ -59,19 +83,25 @@ python -m sglang.launch_server \
     --mem-fraction-static=${rollout_memory_utilization} \
     --dp-size=${dp} \
     --tp-size=${tp} \
-    --log-level=error &
+    --log-level=error > /tmp/sglang_server.log 2>&1 &
+SGLANG_PID=$!
 
-echo "[INFO] retrieval server 대기 중 (port 8000)..."
-until bash -c "echo > /dev/tcp/127.0.0.1/8000" 2>/dev/null; do
-    echo "[INFO] retrieval server 아직 준비 안 됨, 5초 후 재시도..."
-    sleep 5
-done
-echo "[INFO] retrieval server 준비 완료"
-
-echo "[INFO] sglang server 대기 중 (port 8001)..."
+echo "[INFO] sglang server 대기 중 (port 8001, 최대 ${WAIT_TIMEOUT}초)..."
+ELAPSED=0
 until bash -c "echo > /dev/tcp/127.0.0.1/8001" 2>/dev/null; do
-    echo "[INFO] sglang server 아직 준비 안 됨, 5초 후 재시도..."
+    if ! kill -0 $SGLANG_PID 2>/dev/null; then
+        echo "[ERROR] sglang server 프로세스가 종료됨. 로그:"
+        cat /tmp/sglang_server.log
+        exit 1
+    fi
+    if [ $ELAPSED -ge $WAIT_TIMEOUT ]; then
+        echo "[ERROR] sglang server ${WAIT_TIMEOUT}초 내에 시작되지 않음. 로그:"
+        cat /tmp/sglang_server.log
+        exit 1
+    fi
+    echo "[INFO] sglang server 아직 준비 안 됨, 5초 후 재시도... (${ELAPSED}/${WAIT_TIMEOUT}초)"
     sleep 5
+    ELAPSED=$((ELAPSED + 5))
 done
 echo "[INFO] sglang server 준비 완료"
 

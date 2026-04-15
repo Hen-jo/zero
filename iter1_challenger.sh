@@ -34,6 +34,7 @@ VAL_DATA="/input/data/Drzero/test.parquet"
 
 # source activate llm;
 
+# retrieval server를 먼저 띄우고 완전히 뜬 뒤 sglang 시작 (GPU 경쟁 방지)
 PYTHONUNBUFFERED=1 python search/retrieval_server.py \
     --index_path='/input/data/Drzero/corpus/e5_Flat.index' \
     --corpus_path='/input/data/Drzero/corpus/wiki-18.jsonl' \
@@ -42,16 +43,6 @@ PYTHONUNBUFFERED=1 python search/retrieval_server.py \
     --faiss_gpu \
     --topk 3 > /tmp/retrieval_server.log 2>&1 &
 RETRIEVAL_PID=$!
-
-python -m sglang.launch_server \
-    --model=${model} \
-    --port=8001 \
-    --tool-call-parser=qwen25 \
-    --mem-fraction-static=${rollout_memory_utilization} \
-    --dp-size=${dp} \
-    --tp-size=${tp} \
-    --log-level=error > /tmp/sglang_server.log 2>&1 &
-SGLANG_PID=$!
 
 WAIT_TIMEOUT=600  # 최대 10분 대기
 
@@ -73,6 +64,17 @@ until bash -c "echo > /dev/tcp/127.0.0.1/8000" 2>/dev/null; do
     ELAPSED=$((ELAPSED + 5))
 done
 echo "[INFO] retrieval server 준비 완료"
+
+# retrieval server 뜬 후 sglang 시작 (GPU 경쟁 방지)
+python -m sglang.launch_server \
+    --model=${model} \
+    --port=8001 \
+    --tool-call-parser=qwen25 \
+    --mem-fraction-static=${rollout_memory_utilization} \
+    --dp-size=${dp} \
+    --tp-size=${tp} \
+    --log-level=error > /tmp/sglang_server.log 2>&1 &
+SGLANG_PID=$!
 
 echo "[INFO] sglang server 대기 중 (port 8001, 최대 ${WAIT_TIMEOUT}초)..."
 ELAPSED=0

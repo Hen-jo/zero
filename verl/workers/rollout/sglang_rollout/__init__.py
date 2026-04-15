@@ -11,6 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 
-from .sglang_rollout import SGLangRollout
+def __getattr__(name):
+    if name == "SGLangRollout":
+        from .sglang_rollout import SGLangRollout
+        return SGLangRollout
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 __all__ = ["SGLangRollout"]

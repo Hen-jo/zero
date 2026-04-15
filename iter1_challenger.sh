@@ -112,7 +112,7 @@ python -m verl.trainer.main_ppo \
     custom_reward_function.reward_kwargs.model_name=${model} \
     custom_reward_function.reward_kwargs.base_url="http://127.0.0.1:8001" \
     custom_reward_function.reward_kwargs.reward_rollout_n=${reward_group_size} \
-    trainer.logger='["wandb", "console"]' \
+    trainer.logger='["console"]' \
     trainer.project_name="dr-zero" \
     trainer.experiment_name="challenger_iter1_ratio${hop_ratio}_${algorithm}_group${grpo_group_size}-${reward_group_size}_${model_name}" \
     trainer.default_local_dir=$OUTPUT_DIR/checkpoints \

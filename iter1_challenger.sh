@@ -3,6 +3,8 @@
 
 set -x
 
+export HF_DATASETS_CACHE=/input/cache/huggingface
+
 kill -9 $(lsof -t -i :8000);
 kill -9 $(lsof -t -i :8001);
 

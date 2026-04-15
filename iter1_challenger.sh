@@ -36,8 +36,13 @@ VAL_DATA="/input/data/Drzero/test.parquet"
 
 # source activate llm;
 
+echo "[$(date '+%H:%M:%S')] CWD: $(pwd)"
+echo "[$(date '+%H:%M:%S')] Python: $(which python) $(python --version 2>&1)"
+echo "[$(date '+%H:%M:%S')] retrieval_server.py 존재: $(ls $SCRIPT_DIR/search/retrieval_server.py 2>&1)"
+python -c "import faiss, torch, transformers; print('imports OK')" 2>&1
+
 echo "[$(date '+%H:%M:%S')] [1/3] retrieval server 시작..."
-PYTHONUNBUFFERED=1 python search/retrieval_server.py \
+PYTHONUNBUFFERED=1 python $SCRIPT_DIR/search/retrieval_server.py \
     --index_path='/input/data/Drzero/corpus/e5_Flat.index' \
     --corpus_path='/input/data/Drzero/corpus/wiki-18.jsonl' \
     --retriever_model='/input/model/e5-base-v2' \

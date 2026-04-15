@@ -45,7 +45,7 @@ SOLVER_PATH="$OUTPUT_DIR/checkpoints/dr-zero/solver_iter${prev_iter}_ratio${hop_
 RESUME_PATH="$OUTPUT_DIR/checkpoints/dr-zero/challenger_iter${prev_iter}_ratio${hop_ratio}_${algorithm}_group${grpo_group_size}-${reward_group_size}_${model_name}/global_step_100"
 
 
-# retrieval server를 먼저 띄우고 완전히 뜬 뒤 sglang 시작 (GPU 경쟁 방지)
+echo "[$(date '+%H:%M:%S')] [1/3] retrieval server 시작..."
 PYTHONUNBUFFERED=1 python search/retrieval_server.py \
     --index_path='/input/data/Drzero/corpus/e5_Flat.index' \
     --corpus_path='/input/data/Drzero/corpus/wiki-18.jsonl' \
@@ -59,19 +59,23 @@ wait_for_port() {
     local port=$1 pid=$2 log=$3 elapsed=0
     until bash -c "echo > /dev/tcp/127.0.0.1/${port}" 2>/dev/null; do
         if ! kill -0 $pid 2>/dev/null; then
-            echo "[ERROR] port ${port} 서버 종료됨. 로그:"; cat $log; exit 1
+            echo "[$(date '+%H:%M:%S')] [ERROR] port ${port} 서버 종료됨. 로그:"; cat $log; exit 1
         fi
         if [ $elapsed -ge 600 ]; then
-            echo "[ERROR] port ${port} 서버 600초 내 미시작. 로그:"; cat $log; exit 1
+            echo "[$(date '+%H:%M:%S')] [ERROR] port ${port} 서버 600초 내 미시작. 로그:"; cat $log; exit 1
+        fi
+        if [ $((elapsed % 60)) -eq 0 ] && [ $elapsed -gt 0 ]; then
+            echo "[$(date '+%H:%M:%S')] [INFO] port ${port} 대기 중 (${elapsed}초 경과), 최근 로그:"
+            tail -3 $log
         fi
         sleep 5; elapsed=$((elapsed + 5))
     done
-    echo "[INFO] port ${port} 준비 완료"
+    echo "[$(date '+%H:%M:%S')] [INFO] port ${port} 준비 완료"
 }
 
 wait_for_port 8000 $RETRIEVAL_PID /tmp/retrieval_server.log
 
-# retrieval server 뜬 후 sglang 시작
+echo "[$(date '+%H:%M:%S')] [2/3] sglang 시작 ($SOLVER_NAME)..."
 python -m sglang.launch_server \
     --model=$SOLVER_PATH \
     --served-model-name=$SOLVER_NAME \
@@ -85,6 +89,7 @@ SGLANG_PID=$!
 
 wait_for_port 8001 $SGLANG_PID /tmp/sglang_server.log
 
+echo "[$(date '+%H:%M:%S')] [3/3] 학습 시작: $CHALLENGER_NAME"
 python -m verl.trainer.main_ppo \
     --config-path=$CONFIG_PATH \
     --config-name="search_multiturn_grpo" \

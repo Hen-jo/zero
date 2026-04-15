@@ -57,9 +57,6 @@ wait_for_port() {
         if ! kill -0 $pid 2>/dev/null; then
             echo "[$(date '+%H:%M:%S')] [ERROR] port ${port} 서버 종료됨. 로그:"; cat $log; exit 1
         fi
-        if [ $elapsed -ge 1200 ]; then
-            echo "[$(date '+%H:%M:%S')] [ERROR] port ${port} 서버 1200초 내 미시작. 로그:"; cat $log; exit 1
-        fi
         if [ $((elapsed % 60)) -eq 0 ] && [ $elapsed -gt 0 ]; then
             echo "[$(date '+%H:%M:%S')] [INFO] port ${port} 대기 중 (${elapsed}초 경과), 최근 로그:"
             tail -3 $log

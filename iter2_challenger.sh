@@ -53,26 +53,21 @@ PYTHONUNBUFFERED=1 python search/retrieval_server.py \
     --topk 3 > /tmp/retrieval_server.log 2>&1 &
 RETRIEVAL_PID=$!
 
-WAIT_TIMEOUT=600
+wait_for_port() {
+    local port=$1 pid=$2 log=$3 elapsed=0
+    until bash -c "echo > /dev/tcp/127.0.0.1/${port}" 2>/dev/null; do
+        if ! kill -0 $pid 2>/dev/null; then
+            echo "[ERROR] port ${port} 서버 종료됨. 로그:"; cat $log; exit 1
+        fi
+        if [ $elapsed -ge 600 ]; then
+            echo "[ERROR] port ${port} 서버 600초 내 미시작. 로그:"; cat $log; exit 1
+        fi
+        sleep 5; elapsed=$((elapsed + 5))
+    done
+    echo "[INFO] port ${port} 준비 완료"
+}
 
-echo "[INFO] retrieval server 대기 중 (port 8000, 최대 ${WAIT_TIMEOUT}초)..."
-ELAPSED=0
-until bash -c "echo > /dev/tcp/127.0.0.1/8000" 2>/dev/null; do
-    if ! kill -0 $RETRIEVAL_PID 2>/dev/null; then
-        echo "[ERROR] retrieval server 프로세스가 종료됨. 로그:"
-        cat /tmp/retrieval_server.log
-        exit 1
-    fi
-    if [ $ELAPSED -ge $WAIT_TIMEOUT ]; then
-        echo "[ERROR] retrieval server ${WAIT_TIMEOUT}초 내에 시작되지 않음. 로그:"
-        cat /tmp/retrieval_server.log
-        exit 1
-    fi
-    echo "[INFO] retrieval server 아직 준비 안 됨, 5초 후 재시도... (${ELAPSED}/${WAIT_TIMEOUT}초)"
-    sleep 5
-    ELAPSED=$((ELAPSED + 5))
-done
-echo "[INFO] retrieval server 준비 완료"
+wait_for_port 8000 $RETRIEVAL_PID /tmp/retrieval_server.log
 
 # retrieval server 뜬 후 sglang 시작
 python -m sglang.launch_server \
@@ -86,24 +81,7 @@ python -m sglang.launch_server \
     --log-level=error > /tmp/sglang_server.log 2>&1 &
 SGLANG_PID=$!
 
-echo "[INFO] sglang server 대기 중 (port 8001, 최대 ${WAIT_TIMEOUT}초)..."
-ELAPSED=0
-until bash -c "echo > /dev/tcp/127.0.0.1/8001" 2>/dev/null; do
-    if ! kill -0 $SGLANG_PID 2>/dev/null; then
-        echo "[ERROR] sglang server 프로세스가 종료됨. 로그:"
-        cat /tmp/sglang_server.log
-        exit 1
-    fi
-    if [ $ELAPSED -ge $WAIT_TIMEOUT ]; then
-        echo "[ERROR] sglang server ${WAIT_TIMEOUT}초 내에 시작되지 않음. 로그:"
-        cat /tmp/sglang_server.log
-        exit 1
-    fi
-    echo "[INFO] sglang server 아직 준비 안 됨, 5초 후 재시도... (${ELAPSED}/${WAIT_TIMEOUT}초)"
-    sleep 5
-    ELAPSED=$((ELAPSED + 5))
-done
-echo "[INFO] sglang server 준비 완료"
+wait_for_port 8001 $SGLANG_PID /tmp/sglang_server.log
 
 python -m verl.trainer.main_ppo \
     --config-path=$CONFIG_PATH \

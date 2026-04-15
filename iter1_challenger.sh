@@ -12,7 +12,7 @@ tp=2   # Qwen2.5-3B ≈ 6GB FP16 → A100 한 장에 충분, TP 불필요
 dp=4   # A100 4개 → dp=4 (GPU당 sglang 서버 1개)
 gpus=8
 batch_per_gpu=2
-rollout_memory_utilization=0.4
+rollout_memory_utilization=0.25
 
 hop_ratio=${1:-4321}
 if [ $# -ge 1 ]; then
@@ -112,7 +112,7 @@ python -m verl.trainer.main_ppo \
     custom_reward_function.reward_kwargs.model_name=${model} \
     custom_reward_function.reward_kwargs.base_url="http://127.0.0.1:8001" \
     custom_reward_function.reward_kwargs.reward_rollout_n=${reward_group_size} \
-    trainer.logger='["console", "tensorboard"]' \
+    trainer.logger='["wandb", "console"]' \
     trainer.project_name="dr-zero" \
     trainer.experiment_name="challenger_iter1_ratio${hop_ratio}_${algorithm}_group${grpo_group_size}-${reward_group_size}_${model_name}" \
     trainer.default_local_dir=$OUTPUT_DIR/checkpoints \

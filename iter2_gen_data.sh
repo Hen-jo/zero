@@ -22,14 +22,18 @@ reward_group_size=5
 model=/input/model/Qwen/Qwen2.5-3B-Instruct
 model_name=$(basename "$model" | tr '[:upper:]' '[:lower:]')
 
-challenger_step=100
 data_partition=2
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUTPUT_DIR=/input/output/zero
 EXP_DIR="$OUTPUT_DIR/checkpoints/dr-zero"
 MODEL_PATH="challenger_iter2_ratio${hop_ratio}_${algorithm}_group${grpo_group_size}-${reward_group_size}_${model_name}"
-CKPT_PATH="${EXP_DIR}/${MODEL_PATH}/global_step_${challenger_step}"
+LATEST_STEP=$(ls "${EXP_DIR}/${MODEL_PATH}" | grep '^global_step_' | sort -t_ -k3 -n | tail -1)
+if [ -z "$LATEST_STEP" ]; then
+    echo "[ERROR] ${EXP_DIR}/${MODEL_PATH} 에서 체크포인트를 찾을 수 없습니다."; exit 1
+fi
+CKPT_PATH="${EXP_DIR}/${MODEL_PATH}/${LATEST_STEP}"
+echo "[INFO] 사용할 체크포인트: $CKPT_PATH"
 
 CONFIG_PATH="$SCRIPT_DIR/config"
 TOOL_CONFIG="$CONFIG_PATH/search_tool_config.yaml"

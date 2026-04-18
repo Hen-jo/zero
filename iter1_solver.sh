@@ -22,7 +22,7 @@ fi
 
 algorithm=grpo
 grpo_group_size=5
-model=/input/model/Qwen2-5-3b
+model=/input/model/Qwen/Qwen2.5-3B-Instruct
 model_name=$(basename "$model" | tr '[:upper:]' '[:lower:]')
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

@@ -54,13 +54,10 @@ PYTHONUNBUFFERED=1 python $SCRIPT_DIR/search/retrieval_server.py \
 RETRIEVAL_PID=$!
 
 wait_for_port() {
-    local port=$1 pid=$2 log=$3 elapsed=0 timeout=7200
+    local port=$1 pid=$2 log=$3 elapsed=0
     until bash -c "echo > /dev/tcp/127.0.0.1/${port}" 2>/dev/null; do
         if ! kill -0 $pid 2>/dev/null; then
             echo "[$(date '+%H:%M:%S')] [ERROR] port ${port} 서버 종료됨. 로그:"; cat $log; exit 1
-        fi
-        if [ $elapsed -ge $timeout ]; then
-            echo "[$(date '+%H:%M:%S')] [ERROR] port ${port} 타임아웃 (${timeout}초). 로그:"; cat $log; exit 1
         fi
         if [ $((elapsed % 3600)) -eq 0 ] && [ $elapsed -gt 0 ]; then
             echo "[$(date '+%H:%M:%S')] [INFO] port ${port} 대기 중 (${elapsed}초 경과), 최근 로그:"

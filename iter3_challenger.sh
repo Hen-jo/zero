@@ -7,6 +7,7 @@ export HF_DATASETS_CACHE=/input/cache/huggingface
 
 kill -9 $(lsof -t -i :8000);
 kill -9 $(lsof -t -i :8001);
+kill -9 $(lsof -t -i :8002);
 
 cur_iter=3
 prev_iter=2
@@ -16,9 +17,13 @@ dp=4
 gpus=8
 batch_per_gpu=2
 rollout_memory_utilization=0.25
+verifier_rollout_memory_utilization=0.20
 
 solver_algorithm=grpo
 solver_grpo_group_size=5
+
+verifier_algorithm=grpo
+verifier_grpo_group_size=5
 
 hop_ratio=${1:-4321}
 if [ $# -ge 1 ]; then
@@ -42,8 +47,10 @@ TRAIN_DATA="/input/data/Drzero/zero_ratio${hop_ratio}.parquet"
 VAL_DATA="/input/data/Drzero/test.parquet"
 
 SOLVER_NAME="solver_iter${prev_iter}_hf"
+VERIFIER_NAME="verifier_iter${prev_iter}_hf"
 CHALLENGER_NAME="challenger_iter${cur_iter}_ratio${hop_ratio}_${algorithm}_group${grpo_group_size}-${reward_group_size}_${model_name}"
 SOLVER_PATH="$OUTPUT_DIR/checkpoints/dr-zero/solver_iter${prev_iter}_ratio${hop_ratio}_${solver_algorithm}_group${solver_grpo_group_size}_${model_name}/${SOLVER_NAME}"
+VERIFIER_PATH="$OUTPUT_DIR/checkpoints/dr-zero/verifier_iter${prev_iter}_ratio${hop_ratio}_${verifier_algorithm}_group${verifier_grpo_group_size}_${model_name}/${VERIFIER_NAME}"
 RESUME_PATH="$OUTPUT_DIR/checkpoints/dr-zero/challenger_iter${prev_iter}_ratio${hop_ratio}_${algorithm}_group${grpo_group_size}-${reward_group_size}_${model_name}/global_step_100"
 
 
@@ -77,7 +84,7 @@ wait_for_port() {
 
 wait_for_port 8000 $RETRIEVAL_PID $LOG_DIR/retrieval_server.log
 
-echo "[$(date '+%H:%M:%S')] [2/3] sglang 시작 ($SOLVER_NAME)..."
+echo "[$(date '+%H:%M:%S')] [2/4] sglang 시작 ($SOLVER_NAME)..."
 python -m sglang.launch_server \
     --model=$SOLVER_PATH \
     --served-model-name=$SOLVER_NAME \
@@ -86,12 +93,26 @@ python -m sglang.launch_server \
     --mem-fraction-static=${rollout_memory_utilization} \
     --dp-size=${dp} \
     --tp-size=${tp} \
-    --log-level=error > $LOG_DIR/sglang_server.log 2>&1 &
-SGLANG_PID=$!
+    --log-level=error > $LOG_DIR/sglang_solver_server.log 2>&1 &
+SGLANG_SOLVER_PID=$!
 
-wait_for_port 8001 $SGLANG_PID $LOG_DIR/sglang_server.log
+wait_for_port 8001 $SGLANG_SOLVER_PID $LOG_DIR/sglang_solver_server.log
 
-echo "[$(date '+%H:%M:%S')] [3/3] 학습 시작: $CHALLENGER_NAME"
+echo "[$(date '+%H:%M:%S')] [3/4] sglang 시작 ($VERIFIER_NAME)..."
+python -m sglang.launch_server \
+    --model=$VERIFIER_PATH \
+    --served-model-name=$VERIFIER_NAME \
+    --port=8002 \
+    --tool-call-parser=qwen25 \
+    --mem-fraction-static=${verifier_rollout_memory_utilization} \
+    --dp-size=${dp} \
+    --tp-size=${tp} \
+    --log-level=error > $LOG_DIR/sglang_verifier_server.log 2>&1 &
+SGLANG_VERIFIER_PID=$!
+
+wait_for_port 8002 $SGLANG_VERIFIER_PID $LOG_DIR/sglang_verifier_server.log
+
+echo "[$(date '+%H:%M:%S')] [4/4] 학습 시작: $CHALLENGER_NAME"
 python -m verl.trainer.main_ppo \
     --config-path=$CONFIG_PATH \
     --config-name="search_multiturn_grpo" \
@@ -119,11 +140,13 @@ python -m verl.trainer.main_ppo \
     actor_rollout_ref.actor.use_kl_loss=False \
     actor_rollout_ref.rollout.multi_turn.tool_config_path=$TOOL_CONFIG \
     reward_model.reward_manager=batch \
-    custom_reward_function.name=compute_challenger_score_batch \
+    custom_reward_function.name=compute_challenger_score_batch_with_verifier \
     custom_reward_function.path=verl/custom_reward/reward_function.py \
     custom_reward_function.reward_kwargs.model_name=$SOLVER_NAME \
     custom_reward_function.reward_kwargs.base_url="http://127.0.0.1:8001" \
     custom_reward_function.reward_kwargs.reward_rollout_n=${reward_group_size} \
+    custom_reward_function.reward_kwargs.verifier_model_name=$VERIFIER_NAME \
+    custom_reward_function.reward_kwargs.verifier_base_url="http://127.0.0.1:8002" \
     trainer.logger='["console", "tensorboard"]' \
     trainer.project_name="dr-zero" \
     trainer.experiment_name=$CHALLENGER_NAME \

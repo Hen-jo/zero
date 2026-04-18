@@ -124,7 +124,7 @@ python -m verl.trainer.main_ppo \
     trainer.logger='["console", "tensorboard"]' \
     trainer.project_name="dr-zero" \
     trainer.experiment_name=$CHALLENGER_NAME \
-    trainer.default_local_dir=$OUTPUT_DIR/checkpoints \
+    trainer.default_local_dir=$OUTPUT_DIR/checkpoints/dr-zero/$CHALLENGER_NAME \
     trainer.resume_mode="resume_path" \
     trainer.resume_from_path=$RESUME_PATH \
     trainer.n_gpus_per_node=${gpus} \

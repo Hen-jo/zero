@@ -119,7 +119,7 @@ python -m verl.trainer.main_ppo \
     trainer.logger='["console", "tensorboard"]' \
     trainer.project_name="dr-zero" \
     trainer.experiment_name="challenger_iter1_ratio${hop_ratio}_${algorithm}_group${grpo_group_size}-${reward_group_size}_${model_name}" \
-    trainer.default_local_dir=$OUTPUT_DIR/checkpoints \
+    trainer.default_local_dir=$OUTPUT_DIR/checkpoints/dr-zero/challenger_iter1_ratio${hop_ratio}_${algorithm}_group${grpo_group_size}-${reward_group_size}_${model_name} \
     trainer.n_gpus_per_node=${gpus} \
     trainer.nnodes=1 \
     trainer.save_freq=25 \

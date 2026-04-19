@@ -40,16 +40,23 @@ VAL_DATA="/input/data/Drzero/test.parquet"
 
 # source activate llm;
 
-python search/retrieval_server.py \
+LOG_DIR=$OUTPUT_DIR/logs
+mkdir -p $LOG_DIR
+
+PYTHONUNBUFFERED=1 python search/retrieval_server.py \
     --index_path='/input/data/Drzero/corpus/e5_Flat.index' \
     --corpus_path='/input/data/Drzero/corpus/wiki-18.jsonl' \
     --retriever_model='/input/model/e5-base-v2' \
     --retriever_name='e5' \
     --faiss_gpu \
-    --topk 3 &
+    --topk 3 > $LOG_DIR/retrieval_server.log 2>&1 &
+RETRIEVAL_PID=$!
 
 echo "[INFO] retrieval server 대기 중 (port 8000)..."
 until bash -c "echo > /dev/tcp/127.0.0.1/8000" 2>/dev/null; do
+    if ! kill -0 $RETRIEVAL_PID 2>/dev/null; then
+        echo "[ERROR] retrieval server 종료됨. 로그:"; cat $LOG_DIR/retrieval_server.log; exit 1
+    fi
     echo "[INFO] retrieval server 아직 준비 안 됨, 5초 후 재시도..."
     sleep 5
 done

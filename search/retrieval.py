@@ -245,7 +245,7 @@ class DenseRetriever(BaseRetriever):
         self.index = faiss.read_index(self.index_path)
         if config.faiss_gpu:
             co = faiss.GpuMultipleClonerOptions()
-            co.useFloat16 = False  # FP16 GEMM fails with ldc=524288+ (CUBLAS_STATUS_EXECUTION_FAILED)
+            co.useFloat16 = True
             co.shard = True
             self.index = faiss.index_cpu_to_all_gpus(self.index, co=co)
 

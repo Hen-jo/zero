@@ -45,6 +45,7 @@ python search/retrieval_server.py \
     --corpus_path='/input/data/Drzero/corpus/wiki-18.jsonl' \
     --retriever_model='/input/model/e5-base-v2' \
     --retriever_name='e5' \
+    --faiss_gpu \
     --topk 3 &
 
 echo "[INFO] retrieval server 대기 중 (port 8000)..."

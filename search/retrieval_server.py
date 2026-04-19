@@ -4,6 +4,7 @@
 import json
 import logging
 import os
+import threading
 import time
 import traceback
 import warnings
@@ -255,18 +256,14 @@ class DenseRetriever(BaseRetriever):
         self.topk = config.retrieval_topk
         self.batch_size = config.retrieval_batch_size
         self.search_batch_count = 0
+        self._faiss_lock = threading.Lock()
 
     def _search(self, query: str, num: int = None, return_score: bool = False):
         if num is None:
             num = self.topk
         query_emb = self.encoder.encode(query)
-        MIN_BATCH = 8
-        if len(query_emb) < MIN_BATCH:
-            pad = np.zeros((MIN_BATCH - len(query_emb), query_emb.shape[1]), dtype=query_emb.dtype)
-            query_emb_padded = np.concatenate([query_emb, pad], axis=0)
-        else:
-            query_emb_padded = query_emb
-        scores, idxs = self.index.search(query_emb_padded, k=num)
+        with self._faiss_lock:
+            scores, idxs = self.index.search(query_emb, k=num)
         idxs = idxs[0]
         scores = scores[0]
         results = load_docs(self.corpus, idxs)
@@ -288,18 +285,8 @@ class DenseRetriever(BaseRetriever):
         for batch_idx, start_idx in enumerate(range(0, len(query_list), self.batch_size)):
             query_batch = query_list[start_idx:start_idx + self.batch_size]
             batch_emb = self.encoder.encode(query_batch)
-
-            # FP16 CUBLAS GEMM fails when n_queries < 8 (e.g. n=2 triggers CUBLAS_STATUS_EXECUTION_FAILED)
-            # Pad to minimum 8 rows and discard padding results afterward
-            actual_n = len(batch_emb)
-            MIN_BATCH = 8
-            if actual_n < MIN_BATCH:
-                pad = np.zeros((MIN_BATCH - actual_n, batch_emb.shape[1]), dtype=batch_emb.dtype)
-                batch_emb = np.concatenate([batch_emb, pad], axis=0)
-
-            batch_scores, batch_idxs = self.index.search(batch_emb, k=num)
-            batch_scores = batch_scores[:actual_n]
-            batch_idxs = batch_idxs[:actual_n]
+            with self._faiss_lock:
+                batch_scores, batch_idxs = self.index.search(batch_emb, k=num)
             batch_scores = batch_scores.tolist()
             batch_idxs = batch_idxs.tolist()
 

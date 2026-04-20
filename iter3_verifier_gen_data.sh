@@ -3,6 +3,9 @@
 
 set -x
 
+export HF_DATASETS_CACHE=/tmp/hf_cache
+export HF_HOME=/tmp/hf_home
+
 kill -9 $(lsof -t -i :8000);
 
 cur_iter=3
@@ -43,20 +46,43 @@ SOLVER_PRED_OUT="$OUTPUT_DIR/data/solver_pred_${SOLVER_NAME}.parquet"
 
 CKPT_PATH="${EXP_DIR}/${SOLVER_NAME}/global_step_${solver_step}"
 
-python search/retrieval_server.py \
-    --index_path='/input/data/Drzero/corpus/e5_Flat.index' \
-    --corpus_path='/input/data/Drzero/corpus/wiki-18.jsonl' \
+LOG_DIR=$OUTPUT_DIR/logs
+mkdir -p $LOG_DIR
+export TENSORBOARD_DIR=$OUTPUT_DIR/tensorboard
+
+NFS_INDEX='/input/data/Drzero/corpus/e5_Flat.index'
+NFS_CORPUS='/input/data/Drzero/corpus/wiki-18.jsonl'
+LOCAL_CACHE='/tmp/drzero_corpus'
+mkdir -p $LOCAL_CACHE
+
+for FILE in "$NFS_INDEX" "$NFS_CORPUS"; do
+    BASENAME=$(basename "$FILE")
+    if [ ! -f "$LOCAL_CACHE/$BASENAME" ]; then
+        echo "[$(date '+%H:%M:%S')] NFS → 로컬 복사 중: $BASENAME ..."
+        cp "$FILE" "$LOCAL_CACHE/$BASENAME"
+        echo "[$(date '+%H:%M:%S')] 복사 완료: $BASENAME"
+    else
+        echo "[$(date '+%H:%M:%S')] 로컬 캐시 사용: $BASENAME"
+    fi
+done
+
+PYTHONUNBUFFERED=1 python search/retrieval_server.py \
+    --index_path="$LOCAL_CACHE/e5_Flat.index" \
+    --corpus_path="$LOCAL_CACHE/wiki-18.jsonl" \
     --retriever_model='/input/model/e5-base-v2' \
     --retriever_name='e5' \
-    --faiss_gpu \
-    --topk 3 &
+    --topk 3 > $LOG_DIR/retrieval_server.log 2>&1 &
+RETRIEVAL_PID=$!
 
-echo "[INFO] retrieval server 대기 중 (port 8000)..."
+echo "[$(date '+%H:%M:%S')] [INFO] retrieval server 대기 중 (port 8000)..."
 until bash -c "echo > /dev/tcp/127.0.0.1/8000" 2>/dev/null; do
-    echo "[INFO] retrieval server 아직 준비 안 됨, 5초 후 재시도..."
+    if ! kill -0 $RETRIEVAL_PID 2>/dev/null; then
+        echo "[$(date '+%H:%M:%S')] [ERROR] retrieval server 종료됨. 로그:"; cat $LOG_DIR/retrieval_server.log; exit 1
+    fi
+    echo "[$(date '+%H:%M:%S')] [INFO] retrieval server 아직 준비 안 됨, 5초 후 재시도..."
     sleep 5
 done
-echo "[INFO] retrieval server 준비 완료"
+echo "[$(date '+%H:%M:%S')] [INFO] retrieval server 준비 완료"
 
 python -m verl.trainer.main_generation \
     --config-path="$CONFIG_PATH" \

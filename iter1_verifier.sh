@@ -3,7 +3,8 @@
 
 set -x
 
-export HF_DATASETS_CACHE=/input/cache/huggingface
+export HF_DATASETS_CACHE=/tmp/hf_cache
+export HF_HOME=/tmp/hf_home
 
 kill -9 $(lsof -t -i :8000);
 kill -9 $(lsof -t -i :8001);
@@ -44,31 +45,51 @@ TRAIN_DATA="$OUTPUT_DIR/data/verifier_${CHALLENGER_NAME}/train.parquet"
 VAL_DATA="/input/data/Drzero/test.parquet"
 
 
+LOG_DIR=$OUTPUT_DIR/logs
+mkdir -p $LOG_DIR
+export TENSORBOARD_DIR=$OUTPUT_DIR/tensorboard
+
+NFS_INDEX='/input/data/Drzero/corpus/e5_Flat.index'
+NFS_CORPUS='/input/data/Drzero/corpus/wiki-18.jsonl'
+LOCAL_CACHE='/tmp/drzero_corpus'
+mkdir -p $LOCAL_CACHE
+
+for FILE in "$NFS_INDEX" "$NFS_CORPUS"; do
+    BASENAME=$(basename "$FILE")
+    if [ ! -f "$LOCAL_CACHE/$BASENAME" ]; then
+        echo "[$(date '+%H:%M:%S')] NFS → 로컬 복사 중: $BASENAME ..."
+        cp "$FILE" "$LOCAL_CACHE/$BASENAME"
+        echo "[$(date '+%H:%M:%S')] 복사 완료: $BASENAME"
+    else
+        echo "[$(date '+%H:%M:%S')] 로컬 캐시 사용: $BASENAME"
+    fi
+done
+
 echo "[$(date '+%H:%M:%S')] [1/3] retrieval server 시작..."
 PYTHONUNBUFFERED=1 python $SCRIPT_DIR/search/retrieval_server.py \
-    --index_path='/input/data/Drzero/corpus/e5_Flat.index' \
-    --corpus_path='/input/data/Drzero/corpus/wiki-18.jsonl' \
+    --index_path="$LOCAL_CACHE/e5_Flat.index" \
+    --corpus_path="$LOCAL_CACHE/wiki-18.jsonl" \
     --retriever_model='/input/model/e5-base-v2' \
     --retriever_name='e5' \
-    --faiss_gpu \
-    --topk 3 > /tmp/retrieval_server.log 2>&1 &
+    --topk 3 > $LOG_DIR/retrieval_server.log 2>&1 &
 RETRIEVAL_PID=$!
 
 wait_for_port() {
-    local port=$1 pid=$2 log=$3 elapsed=0 timeout=7200
+    local port=$1 pid=$2 log=$3 elapsed=0
     until bash -c "echo > /dev/tcp/127.0.0.1/${port}" 2>/dev/null; do
         if ! kill -0 $pid 2>/dev/null; then
             echo "[$(date '+%H:%M:%S')] [ERROR] port ${port} 서버 종료됨. 로그:"; cat $log; exit 1
         fi
-        if [ $elapsed -ge $timeout ]; then
-            echo "[$(date '+%H:%M:%S')] [ERROR] port ${port} 타임아웃. 로그:"; cat $log; exit 1
+        if [ $((elapsed % 3600)) -eq 0 ] && [ $elapsed -gt 0 ]; then
+            echo "[$(date '+%H:%M:%S')] [INFO] port ${port} 대기 중 (${elapsed}초 경과), 최근 로그:"
+            tail -3 $log
         fi
         sleep 5; elapsed=$((elapsed + 5))
     done
     echo "[$(date '+%H:%M:%S')] [INFO] port ${port} 준비 완료"
 }
 
-wait_for_port 8000 $RETRIEVAL_PID /tmp/retrieval_server.log
+wait_for_port 8000 $RETRIEVAL_PID $LOG_DIR/retrieval_server.log
 
 echo "[$(date '+%H:%M:%S')] [2/3] sglang 시작..."
 python -m sglang.launch_server \
@@ -78,10 +99,10 @@ python -m sglang.launch_server \
     --mem-fraction-static=${rollout_memory_utilization} \
     --dp-size=${dp} \
     --tp-size=${tp} \
-    --log-level=error > /tmp/sglang_server.log 2>&1 &
+    --log-level=error > $LOG_DIR/sglang_server.log 2>&1 &
 SGLANG_PID=$!
 
-wait_for_port 8001 $SGLANG_PID /tmp/sglang_server.log
+wait_for_port 8001 $SGLANG_PID $LOG_DIR/sglang_server.log
 
 echo "[$(date '+%H:%M:%S')] [3/3] Verifier 학습 시작: ${VERIFIER_NAME}"
 python -m verl.trainer.main_ppo \

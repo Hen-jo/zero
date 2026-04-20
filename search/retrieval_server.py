@@ -256,14 +256,12 @@ class DenseRetriever(BaseRetriever):
         self.topk = config.retrieval_topk
         self.batch_size = config.retrieval_batch_size
         self.search_batch_count = 0
-        self._faiss_lock = threading.Lock()
 
     def _search(self, query: str, num: int = None, return_score: bool = False):
         if num is None:
             num = self.topk
         query_emb = self.encoder.encode(query)
-        with self._faiss_lock:
-            scores, idxs = self.index.search(query_emb, k=num)
+        scores, idxs = self.index.search(query_emb, k=num)
         idxs = idxs[0]
         scores = scores[0]
         results = load_docs(self.corpus, idxs)
@@ -285,8 +283,7 @@ class DenseRetriever(BaseRetriever):
         for batch_idx, start_idx in enumerate(range(0, len(query_list), self.batch_size)):
             query_batch = query_list[start_idx:start_idx + self.batch_size]
             batch_emb = self.encoder.encode(query_batch)
-            with self._faiss_lock:
-                batch_scores, batch_idxs = self.index.search(batch_emb, k=num)
+            batch_scores, batch_idxs = self.index.search(batch_emb, k=num)
             batch_scores = batch_scores.tolist()
             batch_idxs = batch_idxs.tolist()
 

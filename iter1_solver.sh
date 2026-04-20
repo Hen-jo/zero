@@ -40,6 +40,9 @@ VAL_DATA="/input/data/Drzero/test.parquet"
 
 # source activate llm;
 
+export HF_DATASETS_CACHE=/tmp/hf_cache
+export HF_HOME=/tmp/hf_home
+
 LOG_DIR=$OUTPUT_DIR/logs
 mkdir -p $LOG_DIR
 

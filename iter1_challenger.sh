@@ -3,7 +3,8 @@
 
 set -x
 
-export HF_DATASETS_CACHE=/input/cache/huggingface
+export HF_DATASETS_CACHE=/tmp/hf_cache
+export HF_HOME=/tmp/hf_home
 
 kill -9 $(lsof -t -i :8000);
 kill -9 $(lsof -t -i :8001);

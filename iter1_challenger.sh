@@ -44,6 +44,8 @@ echo "[$(date '+%H:%M:%S')] Python: $(which python) $(python --version 2>&1)"
 echo "[$(date '+%H:%M:%S')] retrieval_server.py 존재: $(ls $SCRIPT_DIR/search/retrieval_server.py 2>&1)"
 python -c "import faiss, torch, transformers; print('imports OK')" 2>&1
 
+export TENSORBOARD_DIR=$OUTPUT_DIR/tensorboard
+
 echo "[$(date '+%H:%M:%S')] [1/3] retrieval server 시작..."
 
 # NFS → 로컬 캐시 복사 (이미 있으면 스킵)

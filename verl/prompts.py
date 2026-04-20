@@ -75,6 +75,18 @@ Now, generate a question and its answer with n = {hops} hops starting from the f
 """
 
 
+DEFAULT_BACKWARD_VERIFIER_PREFIX = (
+    "You are verifying whether a candidate answer correctly answers a multi-hop question. "
+    "Verify by reasoning BACKWARD: start from the candidate answer and trace each hop in "
+    "reverse using search, until you reach the starting entity stated in the question. "
+    "Always reason inside <think> and </think>. For each backward hop, call a search engine "
+    "by <tool_call> query </tool_call> and results appear between <tool_response> and "
+    "</tool_response>. After tracing all hops backward, output <answer>YES</answer> if the "
+    "candidate answer is correct, or <answer>NO</answer> if it is incorrect. "
+    "Question: {question} Candidate Answer: {candidate_answer}"
+)
+
+
 DEFAULT_SOLVER_PREFIX = (
   "Answer the given question. You must conduct reasoning inside <think> and </think> "
   "first every time you get new information. After reasoning, if you find you lack "

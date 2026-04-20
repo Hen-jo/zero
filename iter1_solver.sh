@@ -45,6 +45,7 @@ export HF_HOME=/tmp/hf_home
 
 LOG_DIR=$OUTPUT_DIR/logs
 mkdir -p $LOG_DIR
+export TENSORBOARD_DIR=$OUTPUT_DIR/tensorboard
 
 # NFS → 로컬 캐시 복사 (2회차부터는 이미 있으면 스킵)
 NFS_INDEX='/input/data/Drzero/corpus/e5_Flat.index'

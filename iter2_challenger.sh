@@ -3,7 +3,8 @@
 
 set -x
 
-export HF_DATASETS_CACHE=/input/cache/huggingface
+export HF_DATASETS_CACHE=/tmp/hf_cache
+export HF_HOME=/tmp/hf_home
 
 kill -9 $(lsof -t -i :8000);
 kill -9 $(lsof -t -i :8001);
@@ -19,6 +20,9 @@ rollout_memory_utilization=0.25
 
 solver_algorithm=grpo
 solver_grpo_group_size=5
+
+verifier_algorithm=grpo
+verifier_grpo_group_size=5
 
 hop_ratio=${1:-4321}
 if [ $# -ge 1 ]; then
@@ -42,18 +46,36 @@ TRAIN_DATA="/input/data/Drzero/zero_ratio${hop_ratio}.parquet"
 VAL_DATA="/input/data/Drzero/test.parquet"
 
 SOLVER_NAME="solver_iter${prev_iter}_hf"
+VERIFIER_NAME="verifier_iter${prev_iter}_hf"
 CHALLENGER_NAME="challenger_iter${cur_iter}_ratio${hop_ratio}_${algorithm}_group${grpo_group_size}-${reward_group_size}_${model_name}"
 SOLVER_PATH="$OUTPUT_DIR/checkpoints/dr-zero/solver_iter${prev_iter}_ratio${hop_ratio}_${solver_algorithm}_group${solver_grpo_group_size}_${model_name}/${SOLVER_NAME}"
-RESUME_PATH="$OUTPUT_DIR/checkpoints/dr-zero/challenger_iter${prev_iter}_ratio${hop_ratio}_${algorithm}_group${grpo_group_size}-${reward_group_size}_${model_name}/global_step_50"
+RESUME_PATH="$OUTPUT_DIR/checkpoints/dr-zero/verifier_iter${prev_iter}_ratio${hop_ratio}_${verifier_algorithm}_group${verifier_grpo_group_size}_${model_name}/${VERIFIER_NAME}"
 
+
+export TENSORBOARD_DIR=$OUTPUT_DIR/tensorboard
+
+NFS_INDEX='/input/data/Drzero/corpus/e5_Flat.index'
+NFS_CORPUS='/input/data/Drzero/corpus/wiki-18.jsonl'
+LOCAL_CACHE='/tmp/drzero_corpus'
+mkdir -p $LOCAL_CACHE
+
+for FILE in "$NFS_INDEX" "$NFS_CORPUS"; do
+    BASENAME=$(basename "$FILE")
+    if [ ! -f "$LOCAL_CACHE/$BASENAME" ]; then
+        echo "[$(date '+%H:%M:%S')] NFS → 로컬 복사 중: $BASENAME ..."
+        cp "$FILE" "$LOCAL_CACHE/$BASENAME"
+        echo "[$(date '+%H:%M:%S')] 복사 완료: $BASENAME"
+    else
+        echo "[$(date '+%H:%M:%S')] 로컬 캐시 사용: $BASENAME"
+    fi
+done
 
 echo "[$(date '+%H:%M:%S')] [1/3] retrieval server 시작..."
 PYTHONUNBUFFERED=1 python search/retrieval_server.py \
-    --index_path='/input/data/Drzero/corpus/e5_Flat.index' \
-    --corpus_path='/input/data/Drzero/corpus/wiki-18.jsonl' \
+    --index_path="$LOCAL_CACHE/e5_Flat.index" \
+    --corpus_path="$LOCAL_CACHE/wiki-18.jsonl" \
     --retriever_model='/input/model/e5-base-v2' \
     --retriever_name='e5' \
-    --faiss_gpu \
     --topk 3 > $LOG_DIR/retrieval_server.log 2>&1 &
 RETRIEVAL_PID=$!
 

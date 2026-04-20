@@ -43,9 +43,26 @@ VAL_DATA="/input/data/Drzero/test.parquet"
 LOG_DIR=$OUTPUT_DIR/logs
 mkdir -p $LOG_DIR
 
+# NFS → 로컬 캐시 복사 (2회차부터는 이미 있으면 스킵)
+NFS_INDEX='/input/data/Drzero/corpus/e5_Flat.index'
+NFS_CORPUS='/input/data/Drzero/corpus/wiki-18.jsonl'
+LOCAL_CACHE='/tmp/drzero_corpus'
+mkdir -p $LOCAL_CACHE
+
+for FILE in "$NFS_INDEX" "$NFS_CORPUS"; do
+    BASENAME=$(basename "$FILE")
+    if [ ! -f "$LOCAL_CACHE/$BASENAME" ]; then
+        echo "[INFO] NFS → 로컬 복사 중: $BASENAME ..."
+        cp "$FILE" "$LOCAL_CACHE/$BASENAME"
+        echo "[INFO] 복사 완료: $BASENAME"
+    else
+        echo "[INFO] 로컬 캐시 사용: $BASENAME"
+    fi
+done
+
 PYTHONUNBUFFERED=1 python search/retrieval_server.py \
-    --index_path='/input/data/Drzero/corpus/e5_Flat.index' \
-    --corpus_path='/input/data/Drzero/corpus/wiki-18.jsonl' \
+    --index_path="$LOCAL_CACHE/e5_Flat.index" \
+    --corpus_path="$LOCAL_CACHE/wiki-18.jsonl" \
     --retriever_model='/input/model/e5-base-v2' \
     --retriever_name='e5' \
     --faiss_gpu \

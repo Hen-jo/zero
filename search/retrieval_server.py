@@ -2,7 +2,11 @@
 # All rights reserved.
 
 import json
+import logging
 import os
+import threading
+import time
+import traceback
 import warnings
 from typing import List, Dict, Optional
 import argparse
@@ -15,8 +19,17 @@ from tqdm import tqdm
 import datasets
 
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    force=True,
+)
+logger = logging.getLogger(__name__)
 
 
 def load_corpus(corpus_path: str):
@@ -347,30 +360,27 @@ app = FastAPI()
 
 @app.post("/retrieve")
 def retrieve_endpoint(request: QueryRequest):
-    """
-    Endpoint that accepts queries and performs retrieval.
-    Input format:
-    {
-      "queries": ["What is Python?", "Tell me about neural networks."],
-      "topk": 3,
-      "return_scores": true
-    }
-    """
-    if not request.topk:
-        request.topk = config.retrieval_topk  # fallback to default
+    topk = request.topk if request.topk else config.retrieval_topk
+    n_queries = len(request.queries)
+    logger.info(f"[retrieve] n_queries={n_queries} topk={topk} queries={request.queries[:2]}")
 
-    # Perform batch retrieval
-    results, scores = retriever.batch_search(
-        query_list=request.queries,
-        num=request.topk,
-        return_score=request.return_scores
-    )
-    
-    # Format response
+    t0 = time.time()
+    try:
+        results, scores = retriever.batch_search(
+            query_list=request.queries,
+            num=topk,
+            return_score=request.return_scores
+        )
+    except Exception as e:
+        logger.error(f"[retrieve] FAILED after {time.time()-t0:.2f}s: {e}\n{traceback.format_exc()}")
+        raise
+
+    elapsed = time.time() - t0
+    logger.info(f"[retrieve] done in {elapsed:.2f}s, returned {len(results)} results")
+
     resp = []
     for i, single_result in enumerate(results):
         if request.return_scores:
-            # If scores are returned, combine them with results
             combined = []
             for doc, score in zip(single_result, scores[i]):
                 combined.append({"document": doc, "score": score})

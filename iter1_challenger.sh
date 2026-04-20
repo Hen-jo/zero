@@ -3,12 +3,13 @@
 
 set -x
 
-export HF_DATASETS_CACHE=/input/cache/huggingface
+export HF_DATASETS_CACHE=/tmp/hf_cache
+export HF_HOME=/tmp/hf_home
 
 kill -9 $(lsof -t -i :8000);
 kill -9 $(lsof -t -i :8001);
 
-tp=2   # Qwen2.5-3B ≈ 6GB FP16 → A100 한 장에 충분, TP 불필요
+tp=1   # Qwen2.5-3B ≈ 6GB FP16 → A100 한 장에 충분, TP 불필요
 dp=4   # A100 4개 → dp=4 (GPU당 sglang 서버 1개)
 gpus=8
 batch_per_gpu=2
@@ -44,12 +45,29 @@ echo "[$(date '+%H:%M:%S')] retrieval_server.py 존재: $(ls $SCRIPT_DIR/search/
 python -c "import faiss, torch, transformers; print('imports OK')" 2>&1
 
 echo "[$(date '+%H:%M:%S')] [1/3] retrieval server 시작..."
+
+# NFS → 로컬 캐시 복사 (이미 있으면 스킵)
+NFS_INDEX='/input/data/Drzero/corpus/e5_Flat.index'
+NFS_CORPUS='/input/data/Drzero/corpus/wiki-18.jsonl'
+LOCAL_CACHE='/tmp/drzero_corpus'
+mkdir -p $LOCAL_CACHE
+
+for FILE in "$NFS_INDEX" "$NFS_CORPUS"; do
+    BASENAME=$(basename "$FILE")
+    if [ ! -f "$LOCAL_CACHE/$BASENAME" ]; then
+        echo "[$(date '+%H:%M:%S')] NFS → 로컬 복사 중: $BASENAME ..."
+        cp "$FILE" "$LOCAL_CACHE/$BASENAME"
+        echo "[$(date '+%H:%M:%S')] 복사 완료: $BASENAME"
+    else
+        echo "[$(date '+%H:%M:%S')] 로컬 캐시 사용: $BASENAME"
+    fi
+done
+
 PYTHONUNBUFFERED=1 python $SCRIPT_DIR/search/retrieval_server.py \
-    --index_path='/input/data/Drzero/corpus/e5_Flat.index' \
-    --corpus_path='/input/data/Drzero/corpus/wiki-18.jsonl' \
+    --index_path="$LOCAL_CACHE/e5_Flat.index" \
+    --corpus_path="$LOCAL_CACHE/wiki-18.jsonl" \
     --retriever_model='/input/model/e5-base-v2' \
     --retriever_name='e5' \
-    --faiss_gpu \
     --topk 3 > $LOG_DIR/retrieval_server.log 2>&1 &
 RETRIEVAL_PID=$!
 

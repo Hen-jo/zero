@@ -248,7 +248,6 @@ class DenseRetriever(BaseRetriever):
             co.useFloat16 = True
             co.shard = True
             self.index = faiss.index_cpu_to_all_gpus(self.index, co=co)
-            # self.index = faiss.index_cpu_to_all_gpus(self.index)
 
         self.corpus = load_corpus(self.corpus_path)
         self.encoder = Encoder(

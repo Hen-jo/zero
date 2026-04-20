@@ -32,7 +32,7 @@ challenger_reward_group_size=5
 challenger_step=50
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-OUTPUT_DIR=/input/output/zero
+OUTPUT_DIR=/input/output/revzero
 EXP_DIR="$OUTPUT_DIR/checkpoints/dr-zero"
 CONFIG_PATH="$SCRIPT_DIR/config"
 TOOL_CONFIG="$CONFIG_PATH/search_tool_config.yaml"

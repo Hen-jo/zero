@@ -36,7 +36,7 @@ solver_algorithm=grpo
 solver_grpo_group_size=5
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-OUTPUT_DIR=/input/output/zero
+OUTPUT_DIR=/input/output/revzero
 CONFIG_PATH="$SCRIPT_DIR/config"
 TOOL_CONFIG="$CONFIG_PATH/search_tool_config.yaml"
 

@@ -6,7 +6,7 @@ set -x
 export HF_DATASETS_CACHE=/tmp/hf_cache
 export HF_HOME=/tmp/hf_home
 
-kill -9 $(lsof -t -i :8000);
+fuser -k 8000/tcp 2>/dev/null || true
 
 cur_iter=3
 prev_iter=2
@@ -123,4 +123,4 @@ python -m verl.trainer.main_ppo \
     trainer.val_before_train=False \
     trainer.validation_data_dir=${VAL_DATA_DIR} \
     trainer.total_epochs=1 \
-    trainer.save_last_rollout_path="$SOLVER_PRED_OUT" $@
+    +trainer.save_last_rollout_path="$SOLVER_PRED_OUT" $@

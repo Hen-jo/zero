@@ -6,7 +6,7 @@ set -x
 export HF_DATASETS_CACHE=/tmp/hf_cache
 export HF_HOME=/tmp/hf_home
 
-kill -9 $(lsof -t -i :8000);
+fuser -k 8000/tcp 2>/dev/null || true
 
 tp=1
 dp=8

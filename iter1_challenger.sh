@@ -30,7 +30,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_PATH="$SCRIPT_DIR/config"
 TOOL_CONFIG="$CONFIG_PATH/search_tool_config.yaml"
 
-OUTPUT_DIR=/input/output/drzero
+OUTPUT_DIR=/input/output/zero
 LOG_DIR=$OUTPUT_DIR/logs
 mkdir -p $LOG_DIR
 TRAIN_DATA="/input/data/Drzero/zero_ratio${hop_ratio}.parquet"

@@ -29,7 +29,7 @@ challenger_step=150
 data_partition=3
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-OUTPUT_DIR=/input/output/drzero
+OUTPUT_DIR=/input/output/zero
 EXP_DIR="$OUTPUT_DIR/checkpoints/dr-zero"
 MODEL_PATH="challenger_iter3_ratio${hop_ratio}_${algorithm}_group${grpo_group_size}-${reward_group_size}_${model_name}"
 CKPT_PATH="${EXP_DIR}/${MODEL_PATH}/global_step_${challenger_step}"

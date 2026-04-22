@@ -859,16 +859,22 @@ class SGLangRollout(BaseRollout):
             elif _req.state == AsyncRolloutRequestStateEnum.TOOL_CALLING:
                 if _req.messages[-1].tool_calls is not None:
                     parsed_tool_calls = _req.messages[-1].tool_calls
-                    tool_call_results = await asyncio.gather(
-                        *[
-                            self._tool_map[tool_call.function.name].execute(
-                                _req.request_id,
-                                tool_call.function.arguments,
-                                **_req.tools_kwargs[tool_call.function.name].get("execute_kwargs", {}),
-                            )
-                            for tool_call in parsed_tool_calls
-                        ]
-                    )
+                    try:
+                        tool_call_results = await asyncio.wait_for(
+                            asyncio.gather(
+                                *[
+                                    self._tool_map[tool_call.function.name].execute(
+                                        _req.request_id,
+                                        tool_call.function.arguments,
+                                        **_req.tools_kwargs[tool_call.function.name].get("execute_kwargs", {}),
+                                    )
+                                    for tool_call in parsed_tool_calls
+                                ]
+                            ),
+                            timeout=300.0,
+                        )
+                    except asyncio.TimeoutError:
+                        tool_call_results = [("", 0.0, {}) for _ in parsed_tool_calls]
                     _req.add_tool_response_messages(self.processing_class, [resp for resp, _, _ in tool_call_results])
                     for tool_call, (resp, reward, metrics) in zip(parsed_tool_calls, tool_call_results, strict=True):
                         _req.update_metrics(metrics, tool_call.function.name)

@@ -49,6 +49,18 @@ LOG_DIR=$OUTPUT_DIR/logs
 mkdir -p $LOG_DIR
 export TENSORBOARD_DIR=$OUTPUT_DIR/tensorboard
 
+SOLVER_NAME="solver_iter1_ratio${hop_ratio}_${algorithm}_group${grpo_group_size}_${model_name}"
+GEN_DATA_PATH="$OUTPUT_DIR/data/zero_${CHALLENGER_NAME}.parquet"
+SOLVER_PRED_PATH="$OUTPUT_DIR/data/solver_pred_${SOLVER_NAME}.parquet"
+VERIFIER_DATA_DIR="$OUTPUT_DIR/data/verifier_${CHALLENGER_NAME}"
+
+echo "[$(date '+%H:%M:%S')] [0/3] Verifier 학습 데이터 생성 중..."
+python "$SCRIPT_DIR/scripts/data_process/verifier_data.py" \
+    --gen_data_path="$GEN_DATA_PATH" \
+    --solver_pred_path="$SOLVER_PRED_PATH" \
+    --local_dir="$VERIFIER_DATA_DIR"
+echo "[$(date '+%H:%M:%S')] [0/3] Verifier 데이터 생성 완료"
+
 NFS_INDEX='/input/data/Drzero/corpus/e5_Flat.index'
 NFS_CORPUS='/input/data/Drzero/corpus/wiki-18.jsonl'
 LOCAL_CACHE='/tmp/drzero_corpus'

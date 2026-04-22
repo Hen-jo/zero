@@ -1001,6 +1001,33 @@ class RayPPOTrainer:
         with open(local_latest_checkpointed_iteration, "w") as f:
             f.write(str(self.global_steps))
 
+    def _collect_rollout(self, batch: "DataProto"):
+        """마지막 N step의 rollout을 버퍼에 누적한다 (verifier_gen_data 추론 대체용)."""
+        rollout_n = self.config.actor_rollout_ref.rollout.n
+        responses_ids = batch.batch["responses"]            # [N*rollout_n, seq_len]
+        scores = batch.batch["token_level_scores"].sum(-1)  # [N*rollout_n]
+
+        n_total = len(responses_ids)
+        for i in range(0, n_total, rollout_n):
+            group_scores = scores[i : i + rollout_n]
+            best_idx = int(group_scores.argmax())
+            best_ids = responses_ids[i + best_idx]
+            response_text = self.tokenizer.decode(best_ids, skip_special_tokens=True)
+            self._rollout_buffer.append({"responses": response_text})
+
+    def _flush_rollout_buffer(self):
+        """누적된 rollout 버퍼를 parquet으로 저장한다."""
+        import pandas as pd
+        from verl.utils.fs import makedirs
+
+        save_path = OmegaConf.select(self.config.trainer, "save_last_rollout_path")
+        if not save_path or not self._rollout_buffer:
+            return
+
+        makedirs(os.path.dirname(save_path), exist_ok=True)
+        pd.DataFrame(self._rollout_buffer).to_parquet(save_path, index=False)
+        print(f"[save_last_rollout] {len(self._rollout_buffer)} rows → {save_path}")
+
     def _load_checkpoint(self):
         if self.config.trainer.resume_mode == "disable":
             return 0
@@ -1116,6 +1143,7 @@ class RayPPOTrainer:
         )
 
         self.global_steps = 0
+        self._rollout_buffer = []
 
         # load checkpoint before doing anything
         self._load_checkpoint()
@@ -1385,6 +1413,17 @@ class RayPPOTrainer:
                     # 2. It's the last training step.
                     # 3. The current step number is a multiple of the save frequency.
                     # 4. The ESI(Elastic Server Instance)/training plan is close to expiration.
+                    save_last_rollout_steps = OmegaConf.select(
+                        self.config.trainer, "save_last_rollout_steps", default=10
+                    )
+                    if (
+                        OmegaConf.select(self.config.trainer, "save_last_rollout_path")
+                        and self.global_steps > self.total_training_steps - save_last_rollout_steps
+                    ):
+                        self._collect_rollout(batch)
+                    if is_last_step:
+                        self._flush_rollout_buffer()
+
                     if self.config.trainer.save_freq > 0 and (
                         is_last_step
                         or self.global_steps % self.config.trainer.save_freq == 0

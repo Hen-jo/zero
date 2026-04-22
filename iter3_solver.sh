@@ -42,6 +42,7 @@ SOLVER_NAME="solver_iter${cur_iter}_ratio${hop_ratio}_${algorithm}_group${grpo_g
 TRAIN_DATA="$OUTPUT_DIR/data/zero_${CHALLENGER_NAME}.parquet"
 VAL_DATA="/input/data/Drzero/test.parquet"
 VAL_DATA_DIR="$OUTPUT_DIR/data/${SOLVER_NAME}"
+SOLVER_PRED_OUT="$OUTPUT_DIR/data/solver_pred_${SOLVER_NAME}.parquet"
 
 RESUME_PATH="$OUTPUT_DIR/checkpoints/dr-zero/solver_iter${prev_iter}_ratio${hop_ratio}_${algorithm}_group${grpo_group_size}_${model_name}/solver_iter${prev_iter}_hf"
 
@@ -121,4 +122,5 @@ python -m verl.trainer.main_ppo \
     trainer.test_freq=25 \
     trainer.val_before_train=False \
     trainer.validation_data_dir=${VAL_DATA_DIR} \
-    trainer.total_epochs=1 $@
+    trainer.total_epochs=1 \
+    trainer.save_last_rollout_path="$SOLVER_PRED_OUT" $@

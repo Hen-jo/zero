@@ -37,6 +37,9 @@ TRAIN_DATA="$OUTPUT_DIR/data/zero_${CHALLENGER_NAME}.parquet"
 VAL_DATA_DIR="$OUTPUT_DIR/data/${SOLVER_NAME}"
 VAL_DATA="/input/data/Drzero/test.parquet"
 
+# 마지막 step rollout 저장 경로 (verifier_gen_data 추론 대체)
+SOLVER_PRED_OUT="$OUTPUT_DIR/data/solver_pred_${SOLVER_NAME}.parquet"
+
 
 # source activate llm;
 
@@ -119,4 +122,5 @@ python -m verl.trainer.main_ppo \
     trainer.test_freq=25 \
     trainer.val_before_train=False \
     trainer.validation_data_dir=${VAL_DATA_DIR} \
-    trainer.total_epochs=1 $@
+    trainer.total_epochs=1 \
+    trainer.save_last_rollout_path="$SOLVER_PRED_OUT" $@

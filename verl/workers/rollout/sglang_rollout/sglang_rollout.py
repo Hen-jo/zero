@@ -1155,28 +1155,6 @@ class SGLangRollout(BaseRollout):
             multi_modal_inputs.append(req.multi_modal_inputs)
             request_ids.append(req.request_id)
 
-        # Save rollout trajectories for debugging
-        save_path = os.environ.get("ROLLOUT_SAVE_PATH")
-        if save_path and self._tp_rank == 0:
-            import json
-            n_save = int(os.environ.get("ROLLOUT_SAVE_N", "8"))
-            with open(save_path, "a") as f:
-                for req in sorted_output_req_list[:n_save]:
-                    trajectory = []
-                    for msg in req.messages:
-                        entry = {"role": msg.role, "content": msg.content}
-                        if msg.tool_calls:
-                            entry["tool_calls"] = [
-                                {"name": tc.function.name, "args": tc.function.arguments}
-                                for tc in msg.tool_calls
-                            ]
-                        trajectory.append(entry)
-                    f.write(json.dumps({
-                        "request_id": req.request_id,
-                        "reward_scores": req.reward_scores,
-                        "messages": trajectory,
-                    }, ensure_ascii=False) + "\n")
-
         prompt_ids = pad_sequence(
             prompt_ids,
             batch_first=True,

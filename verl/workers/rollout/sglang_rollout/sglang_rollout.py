@@ -871,7 +871,7 @@ class SGLangRollout(BaseRollout):
                                     for tool_call in parsed_tool_calls
                                 ]
                             ),
-                            timeout=30.0,
+                            timeout=300.0,
                         )
                     except asyncio.TimeoutError:
                         tool_call_results = [("", 0.0, {}) for _ in parsed_tool_calls]

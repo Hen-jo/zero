@@ -87,7 +87,7 @@ python -m verl.trainer.main_ppo \
     --config-name='search_multiturn_grpo' \
     data.train_files="$TRAIN_DATA" \
     data.val_files="$VAL_DATA"  \
-    data.train_batch_size=256 \
+    data.train_batch_size=128 \
     data.max_prompt_length=512 \
     algorithm.use_kl_in_reward=False \
     algorithm.adv_estimator=${algorithm} \
@@ -95,7 +95,7 @@ python -m verl.trainer.main_ppo \
     actor_rollout_ref.actor.grad_clip=0.1 \
     actor_rollout_ref.actor.optim.lr=1e-6 \
     actor_rollout_ref.actor.optim.lr_warmup_steps_ratio=0.03 \
-    actor_rollout_ref.actor.ppo_mini_batch_size=256 \
+    actor_rollout_ref.actor.ppo_mini_batch_size=128 \
     actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=${batch_per_gpu} \
     actor_rollout_ref.actor.fsdp_config.param_offload=True \
     actor_rollout_ref.actor.fsdp_config.optimizer_offload=True \

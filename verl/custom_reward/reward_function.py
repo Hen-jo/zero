@@ -280,3 +280,153 @@ def compute_challenger_score_batch(data_sources, solution_strs, ground_truths, e
         f"🙋‍♂️ Solver responses: {grouped_preds[0]}"
     )
     return final_scores
+
+
+def compute_challenger_score_batch_growth(data_sources, solution_strs, ground_truths, extra_infos, **kwargs):
+    """Growth-aware challenger reward (iter2+).
+
+    r = 0.5 * format + difficulty(acc_curr) + lambda * max(0, acc_curr - acc_prev) * (1 - acc_curr)
+
+    growth = max(0, acc_curr - acc_prev) * (1 - acc_curr)
+      - Rewards questions where current solver improved over previous (acc_curr > acc_prev)
+      - Self-regulates: (1 - acc_curr) penalizes questions that are already too easy
+      - Peak reward at acc_prev=0, acc_curr=0.5
+
+    Requires two sglang servers:
+      base_url      : current solver  (iter t)   on port 8001
+      prev_base_url : previous solver (iter t-1) on port 8002
+    """
+    batch = kwargs["data"]
+    processing_class = kwargs["processing_class"]
+    assert "qwen" in type(processing_class).__name__.lower()
+
+    rollout_config = deepcopy(kwargs["config"])
+    rollout_config["prompt_length"] = SOLVER_PROMPT_MAX_LENGTH
+
+    hops = [int(x.split('_')[-1]) for x in batch.non_tensor_batch["data_source"]]
+    raw_messages = [
+        processing_class.decode(batch.batch["input_ids"][i]) for i in range(len(batch))
+    ]
+    responses = [
+        processing_class.decode(
+            batch.batch["responses"][i], skip_special_tokens=True,
+        ) for i in range(len(batch))
+    ]
+
+    format_scores, raw_qs, raw_ans = compute_challenger_format_scores(
+        raw_messages, responses, hops, return_qa=True,
+    )
+
+    gen_batch_ids, gen_batch = [], defaultdict(list)
+    for idx, (s, q, a) in enumerate(zip(format_scores, raw_qs, raw_ans)):
+        if s > 0:
+            gen_batch_ids.append(idx)
+            messages = [{"role": "user", "content": DEFAULT_SOLVER_PREFIX.format(question=q.strip())}]
+            raw_prompt = processing_class.apply_chat_template(
+                messages, add_generation_prompt=True, tokenize=False
+            )
+            model_inputs = processing_class(raw_prompt, return_tensors="pt", add_special_tokens=False)
+            input_ids = model_inputs.pop("input_ids")
+            attention_mask = model_inputs.pop("attention_mask")
+            input_ids, attention_mask = verl_F.postprocess_data(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                max_length=rollout_config["prompt_length"],
+                pad_token_id=processing_class.pad_token_id,
+                left_pad=True,
+                truncation="left",
+            )
+            position_ids = compute_position_id_with_mask(attention_mask)
+            row_dict = {
+                "index": idx,
+                "raw_prompt": messages,
+                "full_prompts": raw_prompt,
+                "input_ids": input_ids[0],
+                "attention_mask": attention_mask[0],
+                "position_ids": position_ids[0],
+                "tools_kwargs": {"search": {"create_kwargs": {"data_source": "search_zero", "ground_truth": "", "question": ""}}},
+                "interaction_kwargs": {},
+            }
+            for key, value in row_dict.items():
+                gen_batch[key].append(value)
+
+    if len(gen_batch_ids) == 0:
+        return format_scores
+
+    for key in gen_batch:
+        if isinstance(gen_batch[key][0], torch.Tensor):
+            gen_batch[key] = torch.stack(gen_batch[key])
+        else:
+            gen_batch[key] = np.array(gen_batch[key])
+
+    group_size = kwargs["reward_rollout_n"]
+    gen_batch = DataProto.from_single_dict(gen_batch)
+    gen_batch = gen_batch.repeat(repeat_times=group_size, interleave=True)
+
+    growth_lambda = kwargs.get("growth_lambda", 0.5)
+    prev_base_url = kwargs["prev_base_url"]
+    prev_model_name = kwargs["prev_model_name"]
+
+    async def _compute_with_two_rollouts():
+        from verl.custom_reward.reward_rollout import MultiTurnRewardRollout
+        async with MultiTurnRewardRollout(
+            config=rollout_config,
+            processing_class=processing_class,
+            model_name=kwargs["model_name"],
+            base_url=kwargs["base_url"],
+        ) as reward_rollout:
+            curr_output = await reward_rollout.generate_sequences(gen_batch)
+
+        async with MultiTurnRewardRollout(
+            config=rollout_config,
+            processing_class=processing_class,
+            model_name=prev_model_name,
+            base_url=prev_base_url,
+        ) as reward_rollout:
+            prev_output = await reward_rollout.generate_sequences(gen_batch)
+
+        return curr_output, prev_output
+
+    loop = asyncio.get_event_loop()
+    curr_outputs, prev_outputs = loop.run_until_complete(_compute_with_two_rollouts())
+
+    def _extract_preds(outputs):
+        preds = []
+        for x in outputs.non_tensor_batch["messages"]:
+            raw = x["messages"][-1].content
+            extracted = re.findall(ANSWER_PATTERN, raw, re.DOTALL)
+            preds.append(extracted[-1].strip() if extracted else raw.strip())
+        return preds
+
+    curr_preds = _extract_preds(curr_outputs)
+    prev_preds = _extract_preds(prev_outputs)
+
+    ground_truths_filtered = [x for idx, x in enumerate(raw_ans) if idx in gen_batch_ids]
+    grouped_curr = [curr_preds[i:i + group_size] for i in range(0, len(curr_preds), group_size)]
+    grouped_prev = [prev_preds[i:i + group_size] for i in range(0, len(prev_preds), group_size)]
+
+    difficulty_scores = []
+    growth_scores = []
+    for curr_group, prev_group, gt in zip(grouped_curr, grouped_prev, ground_truths_filtered):
+        curr_em = [em_check(p, gt) for p in curr_group]
+        prev_em = [em_check(p, gt) for p in prev_group]
+        acc_curr = np.mean(curr_em)
+        acc_prev = np.mean(prev_em)
+        difficulty_scores.append(compute_difficulty_score(curr_em))
+        growth_scores.append(max(0.0, acc_curr - acc_prev) * (1.0 - acc_curr))
+
+    final_scores = [0.5 * x for x in format_scores]
+    for idx, diff_score, grow_score in zip(gen_batch_ids, difficulty_scores, growth_scores):
+        final_scores[idx] += diff_score + growth_lambda * grow_score
+
+    print(
+        f"🚀 Format rewards: Avg {np.mean(format_scores):.3f}\n"
+        f"📊 Difficulty scores: Avg {np.mean(difficulty_scores):.3f}\n"
+        f"🌱 Growth scores: Avg {np.mean(growth_scores):.3f}, Max {np.max(growth_scores):.3f}\n"
+        f"🚀 Final rewards: Avg {np.mean(final_scores):.3f}\n"
+        f"🧑‍🏫 Challenger Q: {raw_qs[gen_batch_ids[0]]}\n"
+        f"🧑‍🎓 Challenger A: {raw_ans[gen_batch_ids[0]]}\n"
+        f"🙋 Curr solver: {grouped_curr[0]}\n"
+        f"🙋 Prev solver: {grouped_prev[0]}"
+    )
+    return final_scores

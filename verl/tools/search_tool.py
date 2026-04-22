@@ -241,6 +241,12 @@ class SearchTool(BaseTool):
         timeout = self.timeout
         query_list_from_params = parameters.get("query_list")
 
+        # Fallback: accept {"query": "..."} in addition to {"query_list": [...]}
+        if not query_list_from_params:
+            raw_query = parameters.get("query")
+            if raw_query and isinstance(raw_query, str):
+                query_list_from_params = [raw_query]
+
         if not query_list_from_params or not isinstance(query_list_from_params, list):
             error_msg = "Error: 'query_list' is missing, empty, or not a list in parameters."
             logger.error(f"[SearchTool] {error_msg} Received parameters: {parameters}")

@@ -21,9 +21,6 @@ rollout_memory_utilization=0.25
 solver_algorithm=grpo
 solver_grpo_group_size=5
 
-verifier_algorithm=grpo
-verifier_grpo_group_size=5
-
 hop_ratio=${1:-4321}
 if [ $# -ge 1 ]; then
     shift
@@ -46,10 +43,9 @@ TRAIN_DATA="/input/data/Drzero/zero_ratio${hop_ratio}.parquet"
 VAL_DATA="/input/data/Drzero/test.parquet"
 
 SOLVER_NAME="solver_iter${prev_iter}_hf"
-VERIFIER_NAME="verifier_iter${prev_iter}_hf"
 CHALLENGER_NAME="challenger_iter${cur_iter}_ratio${hop_ratio}_${algorithm}_group${grpo_group_size}-${reward_group_size}_${model_name}"
 SOLVER_PATH="$OUTPUT_DIR/checkpoints/dr-zero/solver_iter${prev_iter}_ratio${hop_ratio}_${solver_algorithm}_group${solver_grpo_group_size}_${model_name}/${SOLVER_NAME}"
-RESUME_PATH="$OUTPUT_DIR/checkpoints/dr-zero/verifier_iter${prev_iter}_ratio${hop_ratio}_${verifier_algorithm}_group${verifier_grpo_group_size}_${model_name}/${VERIFIER_NAME}"
+RESUME_PATH="$OUTPUT_DIR/checkpoints/dr-zero/challenger_iter${prev_iter}_ratio${hop_ratio}_${algorithm}_group${grpo_group_size}-${reward_group_size}_${model_name}/global_step_100"
 
 
 export TENSORBOARD_DIR=$OUTPUT_DIR/tensorboard

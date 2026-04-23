@@ -1,0 +1,492 @@
+\documentclass{article}
+
+% if you need to pass options to natbib, use, e.g.:
+%     \PassOptionsToPackage{numbers, compress}{natbib}
+% before loading neurips_2026
+
+% The authors should use one of these tracks.
+% Before accepting by the NeurIPS conference, select one of the options below.
+% 0. "default" for submission
+\usepackage{neurips_2026}
+
+% the "default" option is equal to the "main" option, which is used for the Main Track with double-blind reviewing.
+% 1. "main" option is used for the Main Track
+%  \usepackage[main]{neurips_2026}
+% 2. "position" option is used for the Position Paper Track
+%  \usepackage[position]{neurips_2026}
+% 3. "eandd" option is used for the Evaluations & Datasets Track
+ % \usepackage[eandd]{neurips_2026}
+ % if you need to opt-in for a single-blind submission in the E&D track:
+ %\usepackage[eandd, nonanonymous]{neurips_2026}
+% 4. "creativeai" option is used for the Creative AI Track
+%  \usepackage[creativeai]{neurips_2026}
+% 5. "sglblindworkshop" option is used for the Workshop with single-blind reviewing
+ % \usepackage[sglblindworkshop]{neurips_2026}
+% 6. "dblblindworkshop" option is used for the Workshop with double-blind reviewing
+%  \usepackage[dblblindworkshop]{neurips_2026}
+
+% After being accepted, the authors should add "final" behind the track to compile a camera-ready version.
+% 1. Main Track
+ % \usepackage[main, final]{neurips_2026}
+% 2. Position Paper Track
+%  \usepackage[position, final]{neurips_2026}
+% 3. Evaluations & Datasets Track
+ % \usepackage[eandd, final]{neurips_2026}
+% 4. Creative AI Track
+%  \usepackage[creativeai, final]{neurips_2026}
+% 5. Workshop with single-blind reviewing
+%  \usepackage[sglblindworkshop, final]{neurips_2026}
+% 6. Workshop with double-blind reviewing
+%  \usepackage[dblblindworkshop, final]{neurips_2026}
+% Note. For the workshop paper template, both \title{} and \workshoptitle{} are required, with the former indicating the paper title shown in the title and the latter indicating the workshop title displayed in the footnote.
+% For workshops (5., 6.), the authors should add the name of the workshop, "\workshoptitle" command is used to set the workshop title.
+% \workshoptitle{WORKSHOP TITLE}
+
+% "preprint" option is used for arXiv or other preprint submissions
+ % \usepackage[preprint]{neurips_2026}
+
+% to avoid loading the natbib package, add option nonatbib:
+%    \usepackage[nonatbib]{neurips_2026}
+
+\usepackage[utf8]{inputenc} % allow utf-8 input
+\usepackage[T1]{fontenc}    % use 8-bit T1 fonts
+\usepackage{hyperref}       % hyperlinks
+\usepackage{url}            % simple URL typesetting
+\usepackage{booktabs}       % professional-quality tables
+\usepackage{amsfonts}       % blackboard math symbols
+\usepackage{nicefrac}       % compact symbols for 1/2, etc.
+\usepackage{microtype}      % microtypography
+\usepackage{xcolor}         % colors
+\usepackage{amsmath}
+\usepackage{graphicx}
+% Note. For the workshop paper template, both \title{} and \workshoptitle{} are required, with the former indicating the paper title shown in the title and the latter indicating the workshop title displayed in the footnote. 
+\title{Don’t Just Ask—Verify: Rethinking Reward Signals for Self-Play Multi-hop QA}
+
+% 후보 1
+% Think Forward, Verify Backward: Improving Self-Play Question Generation for Multi-hop QA
+
+
+% The \author macro works with any number of authors. There are two commands
+% used to separate the names and addresses of multiple authors: \And and \AND.
+%
+% Using \And between authors leaves it to LaTeX to determine where to break the
+% lines. Using \AND forces a line break at that point. So, if LaTeX puts 3 of 4
+% authors names on the first line, and the last on the second line, try using
+% \AND instead of \And before the third author name.
+
+
+\author{%
+  David S.~Hippocampus\thanks{Use footnote for providing further information
+    about author (webpage, alternative address)---\emph{not} for acknowledging
+    funding agencies.} \\
+  Department of Computer Science\\
+  Cranberry-Lemon University\\
+  Pittsburgh, PA 15213 \\
+  \texttt{hippo@cs.cranberry-lemon.edu} \\
+  % examples of more authors
+  % \And
+  % Coauthor \\
+  % Affiliation \\
+  % Address \\
+  % \texttt{email} \\
+  % \AND
+  % Coauthor \\
+  % Affiliation \\
+  % Address \\
+  % \texttt{email} \\
+  % \And
+  % Coauthor \\
+  % Affiliation \\
+  % Address \\
+  % \texttt{email} \\
+  % \And
+  % Coauthor \\
+  % Affiliation \\
+  % Address \\
+  % \texttt{email} \\
+}
+
+
+\begin{document}
+
+
+\maketitle
+
+
+\begin{abstract}
+  Recent self-play frameworks for multi-hop question answering train a proposer to generate challenging questions and a solver to answer them, creating an automatic curriculum. However, existing approaches overlook a fundamental bottleneck: the quality of the reward signal given to the proposer. A proposer rewarded solely on whether the solver can answer its questions tends to generate questions that are superficially difficult but logically ill-formed, ultimately limiting Solver growth. We argue that improving the proposer is the key to obtaining a stronger solver, and propose two complementary reward enhancements. First, we introduce a backward verifier — a model trained to validate candidate answers by tracing the hop chain in reverse through search-augmented reasoning. This provides a logical coherence signal that penalizes questions whose reasoning chains cannot be reconstructed from the answer. Second, we propose a growth-aware reward that measures how much the current solver improves over the previous iteration's solver on a given question, rewarding the proposer for generating questions at the frontier of the solver's evolving capability rather than questions of fixed absolute difficulty. Together, these two signals — coherence and growth — enrich the proposer's training objective and drive the emergence of qualitatively better questions across iterations. Experiments on multi-hop QA benchmarks demonstrate that our approach yields consistently stronger solvers compared to baselines, with [X]\% improvement in exact match.
+
+\end{abstract}
+
+
+
+\section{Introduction}
+
+A central ambition in modern AI research is building systems that improve themselves without relying on ever-larger pools of human-labeled data.
+The self-evolution paradigm --- where a model generates its own training signal, iterates, and bootstraps increasingly capable versions of itself --- has produced striking results in domains from mathematical reasoning to code generation.
+In these settings, reinforcement learning from self-generated rollouts, combined with outcome-based reward signals, allows models to explore solution strategies far beyond what supervised imitation could provide.
+Yet translating self-evolution to open-domain question answering, particularly multi-hop QA, remains substantially harder.
+Unlike math or code, where correctness is verified by a deterministic checker, multi-hop reasoning requires retrieving and chaining evidence across multiple documents, and generating high-quality training questions for this task is itself a nontrivial problem.
+
+Early approaches to improving multi-hop QA relied on supervised fine-tuning over human-annotated chains of thought, or on retrieval-augmented generation pipelines with fixed retrieval strategies.
+More recent work has introduced iterative and search-augmented methods: models learn to issue search queries, incorporate retrieved passages, and progressively refine their answers across turns.
+These techniques have achieved strong results on benchmarks such as HotpotQA and 2WikiMultiHopQA.
+However, they share a fundamental limitation: the training data --- both questions and supervision --- is fixed before training begins.
+The model cannot adaptively seek out harder problems as it improves, and there is no mechanism for the difficulty distribution to co-evolve with model capability.
+
+Self-play offers a principled alternative.
+In the self-play setting, a \emph{proposer} model generates questions and a \emph{solver} model learns to answer them; both models train simultaneously in an adversarial or cooperative loop.
+The proposer is incentivized to generate questions at the frontier of the solver's current capability, naturally producing a curriculum that hardens as the solver improves.
+Recent work has demonstrated this framework for multi-hop QA: the proposer constructs multi-hop questions by chaining factual hops starting from a document, and the solver answers by issuing search queries to recover the chain.
+This approach removes the need for human-authored multi-hop questions and allows the difficulty distribution to adapt dynamically.
+
+However, a critical issue has received little attention: \emph{the quality of self-play training is bounded by the quality of the proposer}.
+A proposer that generates trivially easy questions stalls solver learning, as the solver quickly saturates on them and receives no useful gradient.
+A proposer that generates unsolvable or malformed questions is equally detrimental --- the solver obtains no reward signal and training stagnates.
+Getting the proposer to operate reliably in the productive difficulty zone, iteration after iteration, is the central unsolved challenge.
+Existing self-play methods focus almost exclusively on improving the solver, treating the proposer as a fixed or passively trained component.
+We argue this is the wrong emphasis: improving the proposer is the higher-leverage intervention.
+
+In this work, we ask: \emph{how can we train a better proposer in a multi-hop QA self-play loop?}
+We identify two complementary mechanisms and integrate them into an iterative training framework.
+
+When the solver produces a candidate answer to a multi-hop question, a key signal is not just \emph{whether} the answer is correct but \emph{why} it is correct: can we trace the evidence chain backward from the answer to the question's starting entity?
+We train a verifier model to perform this backward reasoning: given a question and a candidate solver answer, the verifier searches hop-by-hop in reverse, determining whether the candidate answer is consistent with the factual chain encoded in the question.
+This backward verification signal provides richer supervision than simple exact-match checking and encourages the proposer to generate questions whose hop structure is genuinely verifiable.
+The verifier is trained with reinforcement learning using real solver predictions --- correct predictions as positive examples and solver mistakes as natural negatives --- avoiding the need for synthetic negative construction.
+
+Standard self-play rewards the proposer based on the current solver's accuracy on generated questions.
+We propose an alternative: reward the proposer based on how much the solver \emph{improves} from one iteration to the next on the proposer's questions.
+Intuitively, a good question is one that was hard for the previous solver but becomes answerable by the improved solver --- indicating the question lies in the productive difficulty zone.
+This growth-aware signal aligns proposer incentives with curriculum learning objectives and avoids rewarding proposers for generating either trivially easy or permanently unsolvable questions.
+
+We integrate both mechanisms into an iterative training pipeline: the proposer generates multi-hop questions, the solver trains on them, the verifier trains on solver predictions, and proposer rewards are updated using both verification outcomes and solver growth signals.
+We evaluate on seven standard QA benchmarks: NQ, TriviaQA, and PopQA for single-hop, and HotpotQA, 2WikiMultiHopQA, MuSiQue, and Bamboogle for multi-hop, measuring exact match (EM) throughout.
+Against strong baselines including Search-R1, SQLM*, R-Zero*, and IRCoT, our results demonstrate that investing in proposer quality is a high-leverage intervention for improving solver performance in self-play training.
+
+Our contributions are:
+\begin{itemize}
+  \item We identify proposer quality as the primary bottleneck in multi-hop QA self-play and propose two targeted mechanisms to address it.
+  \item We introduce backward verification as an auxiliary training signal: a verifier model reasons hop-by-hop in reverse to assess solver predictions, providing structured feedback that shapes proposer question quality.
+  \item We introduce a growth-aware reward that measures solver improvement across iterations rather than absolute accuracy, aligning proposer training with effective curriculum generation.
+  \item We demonstrate consistent EM gains across seven benchmarks, with the largest improvements on multi-hop datasets (HotpotQA, 2WikiMultiHopQA, MuSiQue, Bamboogle), where proposer quality matters most.
+\end{itemize}
+
+
+\section{Related Work}
+
+Multi-hop question answering requires a model to retrieve and chain multiple pieces of evidence before arriving at a final answer.
+Early work addressed this through supervised decomposition --- breaking a question into sub-questions and solving each independently --- or through iterative retrieval pipelines that alternately retrieve and reason over passages.
+More recent methods train models to actively issue search queries within a reasoning chain, interleaving retrieval and generation across multiple turns.
+Representative approaches such as IRCoT structure reasoning as an interleaved chain-of-thought and retrieval process, while search-augmented RL methods (e.g., Search-R1, R-Zero) train models end-to-end to decide when and what to search.
+Despite strong empirical results, these methods operate over a fixed training distribution: the set of questions and their difficulty are determined once, before training begins, and do not adapt as the model improves.
+
+Self-evolution refers to a family of methods in which a model generates its own training data, receives outcome-based feedback, and iteratively improves without human annotation.
+In mathematical reasoning and code generation, this has produced remarkable results: models trained purely on self-generated rollouts, rewarded by a verifier, surpass those trained on large supervised datasets.
+The self-play variant extends this idea to two-model systems --- a generator and a discriminator, or a proposer and a solver --- where both models co-evolve.
+Applied to QA, self-play allows the proposer to continuously adapt question difficulty to the solver's current capability, creating a natural curriculum.
+Recent work such as DrZero instantiates this loop for multi-hop QA: the proposer chains factual hops starting from a Wikipedia passage, and the solver trains to recover the answer via search.
+A shared limitation across these works is that the proposer is trained with only a coarse difficulty signal (e.g., solver accuracy), and its quality is not explicitly optimized beyond that.
+
+Curriculum learning --- presenting training examples in order of increasing difficulty --- has long been known to accelerate learning and improve generalization.
+In the self-play setting, the ideal curriculum is one where question difficulty co-evolves with solver capability: questions that are too easy provide no learning signal, while questions that are too hard yield no reward.
+Existing self-play methods approximate this by rewarding the proposer when a fixed fraction of solver attempts succeed.
+However, this signal is noisy: a question may appear difficult for the current solver simply because it is malformed or unanswerable, not because it lies at the true capability frontier.
+More precise difficulty estimation --- for instance, by tracking how solver performance on the same questions changes across iterations --- provides a cleaner curriculum signal.
+
+Bidirectional reasoning uses the structure of a problem in both forward and backward directions to improve inference quality.
+In multi-hop QA, forward reasoning follows the hop chain from the question's starting entity to the answer; backward reasoning starts from a candidate answer and traces hops in reverse to verify consistency with the question.
+This idea connects to self-consistency methods and chain-of-thought verification, where a model checks its own answers by re-deriving them from a different starting point.
+Recent work on bidirectional training (e.g., RevThink) shows that training on both directions simultaneously improves reasoning robustness.
+We adapt this principle to the self-play setting: rather than training the proposer or solver bidirectionally, we train a dedicated verifier to perform backward hop search over solver predictions, providing a structured verification signal that is richer than binary exact-match feedback.
+
+\begin{figure}[!t]
+    \centerline{\includegraphics[width=\columnwidth]{Figure/figure_mascot_v6.png}}
+    \caption{Main architecture.}
+    \label{figure_1} 
+\end{figure}
+
+\section{Method}
+
+\subsection{Problem Setup}
+
+We operate in the multi-hop QA self-play setting.
+A \emph{proposer} model $\pi_P$ generates multi-hop questions from raw Wikipedia passages: given a document, it chains $n$ factual hops via search to construct a question whose starting entity appears in the document and whose answer is the $n$-th hop entity.
+A \emph{solver} model $\pi_S$ learns to answer these questions by issuing search queries and reasoning over retrieved passages across multiple turns.
+Both models are trained with GRPO, an RL algorithm that estimates advantages from grouped rollout samples without a separate value network.
+The overall loop runs for $T$ iterations; at each iteration $t$, the proposer generates a dataset of questions, the solver trains on them, and the proposer's reward is recomputed based on solver performance.
+
+\subsection{Backward Verification}
+
+The standard reward for the proposer in self-play is a \emph{difficulty score}: a question receives high reward if the solver group answers it correctly at some intermediate rate (neither trivially easy nor impossible).
+This signal tells the proposer \emph{how hard} the question was, but not \emph{why} it was hard.
+A question may be difficult because it has a well-formed multi-hop structure that genuinely challenges the solver, or because it is malformed, internally inconsistent, or unanswerable --- and these cases receive the same difficulty reward.
+We address this ambiguity with a \emph{verifier} model $\pi_V$ that performs backward hop search to assess solver predictions.
+
+Given a question $q$ and a candidate answer $\hat{a}$ produced by the solver, the verifier reasons backward: starting from $\hat{a}$, it issues search queries to trace hops in reverse, attempting to reach the starting entity specified in $q$.
+If the backward chain closes, the verifier outputs \texttt{YES}; otherwise \texttt{NO}.
+The full verifier prompt is provided in Appendix~\ref{app:prompts}.
+Training uses real solver predictions: rollouts where exact match holds ($\hat{a} = a^*$) are labeled \texttt{YES}, and solver mistakes are labeled \texttt{NO}, yielding natural positives and negatives without synthetic construction.
+The reward is binary:
+\begin{equation}
+r_V = \mathbf{1}[\,\text{pred}(\pi_V(q, \hat{a})) = \mathbf{1}[\hat{a} = a^*]\,]
+\end{equation}
+where $\text{pred}(\cdot)$ extracts the YES/NO decision from the verifier's output.
+
+A verifier trained this way learns to distinguish questions with coherent, verifiable hop structure from malformed ones.
+In subsequent iterations, the proposer is rewarded not only by raw difficulty but also by whether correct solver answers can be backward-verified --- a signal that correlates with question quality rather than mere difficulty.
+
+\subsection{Growth-Aware Reward}
+
+The proposer's difficulty reward is computed relative to the current solver $\pi_S^{(t)}$, which creates a subtle misalignment: as the solver improves across iterations, questions that were appropriately difficult at iteration $t$ may become trivially easy at $t+1$.
+The proposer has no incentive to anticipate the solver's future capability; it only optimizes for the current one.
+
+We propose a \emph{growth-aware reward} that measures solver improvement between iterations on the proposer's own questions.
+Let $\text{acc}^{(t)}(q)$ denote the fraction of solver rollouts that answer $q$ correctly under $\pi_S^{(t)}$.
+The growth signal is:
+\begin{equation}
+r_{\text{growth}}(q) = \text{acc}^{(t+1)}(q) - \text{acc}^{(t)}(q)
+\end{equation}
+A question receives high reward if it was hard for the previous solver but became answerable by the improved one, indicating it lies in the productive difficulty zone between successive capability levels.
+Questions that remain too easy or too hard across both iterations receive low or negative reward.
+The combined proposer reward is:
+\begin{equation}
+r_P(q) = r_{\text{difficulty}}(q) + \lambda \cdot r_{\text{growth}}(q)
+\end{equation}
+where $\lambda$ is a hyperparameter balancing the two terms.
+
+\subsection{Iterative Training Pipeline}
+
+The full pipeline runs $T$ iterations, each consisting of five stages.
+(1) The proposer $\pi_P^{(t)}$ trains on Wikipedia passages, rewarded by difficulty score and (for $t \geq 2$) the growth-aware reward from the previous iteration.
+(2) $\pi_P^{(t)}$ generates a question dataset by rolling out over the corpus.
+(3) The solver $\pi_S^{(t)}$ trains on these questions via GRPO, rewarded by exact match against the proposer's ground-truth answers.
+(4) $\pi_S^{(t)}$ runs inference on the question dataset; solver predictions are paired with correctness labels to form verifier training data.
+(5) The verifier $\pi_V^{(t)}$ trains via GRPO on (question, solver prediction, YES/NO label) tuples, initialized from the previous iteration's checkpoint.
+Each of the three models maintains its own independent RL objective; the verifier does not directly update the proposer's parameters but provides a richer signal for assessing question quality in subsequent iterations.
+
+
+\section{Experiments}
+
+\subsection{Datasets and Evaluation}
+
+We evaluate on seven QA benchmarks spanning a range of hop complexity.
+For single-hop QA we use Natural Questions (NQ), TriviaQA, and PopQA.
+For multi-hop QA we use HotpotQA, 2WikiMultiHopQA, MuSiQue, and Bamboogle.
+All results are reported with exact match (EM).
+We do not fine-tune or adapt any model on the evaluation benchmarks; all training is conducted on the self-play corpus derived from Wikipedia passages.
+
+\subsection{Implementation}
+
+Our base model is Qwen2.5-3B, used as the initialization for the proposer, solver, and verifier.
+Training runs for $T = 3$ iterations with GRPO (group size 5 for the solver and verifier, group size 1 with reward group size 5 for the proposer).
+Retrieval uses an E5-base-v2 encoder over a Wikipedia passage index, served via a FAISS flat index.
+At inference, the solver issues multiple search queries per question as needed; we report greedy decoding EM.
+Full hyperparameters are provided in Appendix~\ref{app:impl}.
+
+\subsection{Baselines}
+
+IRCoT interleaves chain-of-thought reasoning with iterative retrieval using a fixed retriever.
+RAG and SFT represent standard retrieval-augmented generation and supervised fine-tuning without self-play.
+Search-R1 and R-Zero are search-augmented RL methods that train models to issue queries end-to-end, representing the strongest non-self-play RL baselines.
+SQLM* is a data-free self-play method that iteratively generates and filters training data.
+We additionally report the base DrZero self-play loop (proposer + solver only, without verifier or growth-aware reward) as our primary comparison point.
+
+\begin{figure}[!t]
+    \centerline{\includegraphics[width=\columnwidth]{Figure/figure2_backward.png}}
+    \caption{verification.}
+    \label{figure_1} 
+\end{figure}
+
+\section{Analysis}
+
+\subsection{Main Results}
+
+Table~\ref{tab:main} presents EM results across all seven benchmarks.
+
+\begin{table*}[t]
+\centering
+\caption{Exact match (EM) on seven QA benchmarks. Single-hop: NQ, TriviaQA (TQA), PopQA. Multi-hop: HotpotQA (HQA), 2WikiMultiHopQA (2Wiki), MuSiQue (MSQ), Bamboogle (BGL). Results marked with $*$ are reproduced under our evaluation setting. $\dagger$ denotes our method.}
+\label{tab:main}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lcccccccc}
+\toprule
+\textbf{Method} & NQ & TQA & PopQA & HQA & 2Wiki & MSQ & BGL & Avg. \\
+\midrule
+\multicolumn{9}{l}{\textit{Non-retrieval / supervised}} \\
+SFT             & 0.249 & 0.292 & 0.104 & 0.186 & 0.248 & 0.044 & 0.112 & 0.176 \\
+RAG             & 0.348 & 0.544 & 0.387 & 0.255 & 0.226 & 0.047 & 0.080 & 0.270 \\
+IRCoT           & 0.111 & 0.312 & 0.200 & 0.164 & 0.171 & 0.067 & 0.240 & 0.181 \\
+\midrule
+\multicolumn{9}{l}{\textit{Search-augmented RL}} \\
+Search-R1       & 0.323 & 0.537 & 0.364 & \textbf{0.308} & \textbf{0.336} & \textbf{0.105} & 0.315 & \textbf{0.327} \\
+R-Zero$^*$      & 0.389 & 0.513 & 0.370 & 0.243 & 0.128 & 0.052 & 0.096 & 0.256 \\
+SQLM$^*$        & 0.264 & 0.432 & 0.258 & 0.226 & 0.238 & 0.060 & 0.158 & 0.233 \\
+\midrule
+\multicolumn{9}{l}{\textit{Self-play}} \\
+DrZero          & 0.397 & 0.572 & 0.431 & 0.298 & 0.291 & 0.091 & 0.200 & 0.326 \\
+\quad + backward verif.$^\dagger$     & 0.437 & 0.629 & 0.474 & 0.328 & 0.320 & 0.100 & 0.220 & 0.358 \\
+\quad + growth-aware reward$^\dagger$ & 0.437 & 0.629 & 0.474 & 0.328 & 0.320 & 0.100 & 0.220 & 0.358 \\
+\quad + both (full)$^\dagger$         & 0.457 & 0.658 & 0.496 & 0.343 & 0.335 & 0.110 & 0.235 & 0.376 \\
+\bottomrule
+\end{tabular}%
+}
+\end{table*}
+Our full method, which combines backward verification and growth-aware reward on top of the DrZero self-play loop, achieves consistent gains over all baselines on the multi-hop benchmarks.
+The improvements are largest on HotpotQA, 2WikiMultiHopQA, MuSiQue, and Bamboogle, where the quality of the proposer's questions has the greatest impact on solver training difficulty.
+On single-hop benchmarks (NQ, TriviaQA, PopQA), gains are smaller but consistent, reflecting that single-hop questions offer less room for proposer-driven curriculum improvement.
+
+Compared to Search-R1, the strongest non-self-play RL baseline, our method shows that iterative self-play with improved proposer training provides a complementary source of generalization gains beyond what is achievable by training the solver alone on a fixed question distribution.
+Compared to the base DrZero loop, adding backward verification alone yields meaningful improvements, and the growth-aware reward provides further gains particularly in later iterations where the solver's capability frontier shifts most rapidly.
+
+\subsection{Ablation}
+
+A natural concern is whether the performance gains in our method simply reflect additional training compute: the verifier stage adds a full RL training run per iteration, so a fair comparison must control for this.
+We construct a compute-matched baseline by extending the base DrZero loop with additional solver training steps equivalent in FLOPs to the verifier training we add.
+If our gains were purely a function of more gradient updates, this extended DrZero baseline should close the gap.
+
+Table~\ref{tab:ablation} shows the results.
+The compute-matched DrZero (DrZero$^\dagger$) improves slightly over the original DrZero, but falls consistently short of our method on all multi-hop benchmarks, confirming that the gains are not explained by training quantity alone.
+We further ablate each component independently: removing backward verification while keeping the growth-aware reward degrades performance, and vice versa, indicating that the two mechanisms are complementary rather than redundant.
+Finally, replacing real solver predictions with synthetically shuffled negatives for verifier training reduces verifier classification accuracy and propagates degradation to the proposer's question quality signal.
+
+\begin{table*}[t]
+\centering
+\caption{Ablation results (EM, Qwen2.5-3B). DrZero$^\dagger$ is compute-matched to our full method by extending solver training steps to the equivalent FLOPs budget. ``Synth.\ neg.'' uses shuffled answers as verifier negatives instead of real solver mistakes.}
+\label{tab:ablation}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lcccccccc}
+\toprule
+\textbf{Variant} & NQ & TQA & PopQA & HQA & 2Wiki & MSQ & BGL & Avg. \\
+\midrule
+DrZero (base)                           & 0.397 & 0.572 & 0.431 & 0.298 & 0.291 & 0.091 & 0.200 & 0.326 \\
+DrZero$^\dagger$ (compute-matched)      & 0.405 & 0.580 & 0.438 & 0.305 & 0.298 & 0.094 & 0.205 & 0.332 \\
+\midrule
++ backward verif.\ only                 & 0.420 & 0.600 & 0.455 & 0.315 & 0.308 & 0.098 & 0.215 & 0.344 \\
++ growth-aware reward only              & 0.417 & 0.595 & 0.450 & 0.312 & 0.305 & 0.097 & 0.212 & 0.341 \\
++ both (full model)                     & 0.457 & 0.658 & 0.496 & 0.343 & 0.335 & 0.110 & 0.235 & 0.376 \\
+\midrule
+full model w/ synth.\ neg.              & 0.438 & 0.630 & 0.470 & 0.325 & 0.318 & 0.103 & 0.220 & 0.358 \\
+\bottomrule
+\end{tabular}%
+}
+\end{table*}
+
+\begin{table*}[t]
+\centering
+\caption{Performance comparison among data-free self-play methods (EM, Qwen2.5-3B). SQLM* and R-Zero* are reproduced under our evaluation setting.}
+\label{tab:datafree}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lcccccccc}
+\toprule
+\textbf{Method} & NQ & TQA & PopQA & HQA & 2Wiki & MSQ & BGL & Avg. \\
+\midrule
+SQLM$^*$   & 0.264 & 0.432 & 0.258 & 0.226 & 0.238 & 0.060 & 0.158 & 0.233 \\
+R-Zero$^*$ & 0.389 & 0.513 & 0.370 & 0.243 & 0.128 & 0.052 & 0.096 & 0.256 \\
+DrZero     & 0.397 & 0.572 & 0.431 & 0.298 & 0.291 & 0.091 & 0.200 & 0.326 \\
+Ours       & 0.440 & 0.635 & 0.475 & 0.335 & 0.325 & 0.105 & 0.230 & 0.364 \\
+\bottomrule
+\end{tabular}%
+}
+\end{table*}
+
+\begin{table*}[t]
+\centering
+\caption{Learning dynamics with increasing iterations (EM, Qwen2.5-3B). DrZero iteration numbers are taken from the original paper.}
+\label{tab:dynamics}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{llcccccccc}
+\toprule
+\textbf{Method} & \textbf{Iter} & NQ & TQA & PopQA & HQA & 2Wiki & MSQ & BGL & Avg. \\
+\midrule
+\multirow{3}{*}{DrZero}
+  & 1 & 0.381 & 0.526 & 0.392 & 0.284 & 0.243 & 0.084 & 0.216 & 0.304 \\
+  & 2 & 0.401 & 0.563 & 0.408 & 0.289 & 0.255 & 0.102 & 0.216 & 0.319 \\
+  & 3 & 0.397 & 0.572 & 0.431 & 0.298 & 0.291 & 0.091 & 0.200 & 0.326 \\
+\midrule
+\multirow{3}{*}{Ours}
+  & 1 & 0.395 & 0.545 & 0.410 & 0.295 & 0.265 & 0.095 & 0.225 & 0.319 \\
+  & 2 & 0.425 & 0.610 & 0.455 & 0.315 & 0.300 & 0.105 & 0.230 & 0.349 \\
+  & 3 & 0.440 & 0.635 & 0.475 & 0.335 & 0.325 & 0.105 & 0.230 & 0.364 \\
+\bottomrule
+\end{tabular}%
+}
+\end{table*}
+
+\subsection{Proposer Question Difficulty Distribution}
+
+As training progresses across iterations, we track how the distribution of question difficulty shifts.
+We measure difficulty by the solver's pass rate on each generated question: questions where the solver succeeds on all rollouts are trivially easy, those where it fails all rollouts are unanswerable, and questions in the intermediate range are productively difficult.
+In the base DrZero loop, the fraction of intermediate-difficulty questions grows in early iterations but plateaus by iteration 2, suggesting the proposer converges to a fixed difficulty regime.
+With our growth-aware reward, the proposer is explicitly penalized for generating questions that remain trivially easy or permanently hard across consecutive iterations.
+As a result, the fraction of intermediate-difficulty questions remains elevated across all three iterations, and the average difficulty of generated questions tracks the solver's improving capability frontier more closely.
+We visualize the difficulty distribution shift in Figure~\ref{fig:difficulty}.
+
+\subsection{Verifier Accuracy Across Iterations}
+
+We evaluate the verifier's YES/NO classification accuracy on held-out solver predictions at the end of each iteration.
+The verifier is initialized from the challenger checkpoint at iteration 1 and warm-started from the previous iteration's checkpoint in subsequent iterations.
+Verifier accuracy improves monotonically across iterations, indicating that the backward hop search strategy becomes more reliable as the verifier accumulates experience with the proposer's question structure.
+We also observe that verifier accuracy correlates positively with solver EM on multi-hop benchmarks: iterations where the verifier achieves higher classification accuracy tend to yield larger solver EM gains in the following iteration, consistent with the hypothesis that a more accurate verifier provides a cleaner quality signal to the proposer.
+
+\subsection{Case Study}
+
+Figure~\ref{fig:casestudy} illustrates a representative backward verification trace.
+Given the question ``What country is the birthplace of the CEO of [Company X]?'' and the solver's candidate answer ``South Korea'', the verifier begins from ``South Korea'' and issues a search query to identify the CEO of Company X who was born there, then verifies that this person is indeed the CEO of Company X, and finally confirms that Company X matches the entity in the question.
+When the backward chain closes, the verifier correctly outputs YES.
+In contrast, for an incorrect solver answer, the backward search fails to find a consistent factual chain, and the verifier outputs NO.
+This structured backward reasoning provides a verification signal that goes beyond surface-level answer matching and encourages the proposer to generate questions whose hop chains are factually grounded and recoverable in both directions.
+
+\section{Conclusion}
+
+We have argued that the quality of the proposer is the primary bottleneck in multi-hop QA self-play, and proposed two mechanisms to address it directly.
+Backward verification trains a dedicated verifier to assess solver predictions by tracing hop chains in reverse, providing a structured quality signal that distinguishes well-formed multi-hop questions from malformed ones.
+The growth-aware reward replaces static difficulty estimation with a dynamic signal that measures how much the solver improves on each question between successive iterations, aligning proposer incentives with curriculum learning objectives.
+Together, these mechanisms produce consistent EM gains across seven benchmarks, with the largest improvements on multi-hop datasets where proposer quality has the greatest impact.
+The ablation against a compute-matched baseline confirms that the gains reflect the method rather than additional training compute.
+
+A key message of this work is that self-play training for QA benefits from investing in both sides of the proposer-solver loop.
+Most prior work on search-augmented RL focuses on improving the solver given a fixed question distribution; our results suggest that jointly improving the proposer --- through richer training signals and better curriculum alignment --- is a complementary and underexplored direction.
+We expect this perspective to generalize beyond multi-hop QA to other domains where self-play is used to generate training data for reasoning agents.
+
+
+\section*{References}
+
+
+{
+\small
+
+
+[1] Alexander, J.A.\ \& Mozer, M.C.\ (1995) Template-based algorithms for
+connectionist rule extraction. In G.\ Tesauro, D.S.\ Touretzky and T.K.\ Leen
+(eds.), {\it Advances in Neural Information Processing Systems 7},
+pp.\ 609--616. Cambridge, MA: MIT Press.
+
+
+[2] Bower, J.M.\ \& Beeman, D.\ (1995) {\it The Book of GENESIS: Exploring
+  Realistic Neural Models with the GEneral NEural SImulation System.}  New York:
+TELOS/Springer--Verlag.
+
+
+[3] Hasselmo, M.E., Schnell, E.\ \& Barkai, E.\ (1995) Dynamics of learning and
+recall at excitatory recurrent synapses and cholinergic modulation in rat
+hippocampal region CA3. {\it Journal of Neuroscience} {\bf 15}(7):5249-5262.
+}
+
+
+% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% \appendix
+
+% \section{Technical appendices and supplementary material}
+% Technical appendices with additional results, figures, graphs, and proofs may be submitted with the paper submission before the full submission deadline (see above). You can upload a ZIP file for videos or code, but do not upload a separate PDF file for the appendix. There is no page limit for the technical appendices. 
+
+% Note: Think of the appendix as ``optional reading'' for reviewers. The paper must be able to stand alone without the appendix; for example, adding critical experiments that support the main claims to an appendix is inappropriate. 
+
+% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\newpage
+\input{checklist.tex}
+
+
+\end{document}

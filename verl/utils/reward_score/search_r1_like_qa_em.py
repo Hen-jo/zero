@@ -111,10 +111,10 @@ def compute_score(solution_str, ground_truth, method="strict", format_score=0.0,
         print("--------------------------------")
         print(f"Golden answers: {ground_truth['target']}")
         if answer is not None:
-            print(f"Extracted answer is not None: {answer}")
+            print(f"Extracted answer: {answer}")
         else:
             print("Extracted answer: None!")
-        # print(f"Solution string: {solution_str}")
+        print(f"Solution string (last 600 chars):\n{solution_str[-600:]}")
 
     if answer is None:
         return 0

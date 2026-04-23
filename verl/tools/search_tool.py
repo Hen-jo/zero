@@ -261,6 +261,12 @@ class SearchTool(BaseTool):
             # Store results in instance dictionary
             self._instance_dict[instance_id]["reward"].append(result_text.strip())
 
+            # Debug: log every search query and result summary
+            status = metadata.get("status", "unknown")
+            n_results = metadata.get("total_results", 0)
+            preview = result_text[:120] if result_text else "(empty)"
+            print(f"[SEARCH] queries={query_list_from_params} status={status} n_results={n_results} preview={preview!r}", flush=True)
+
             # Convert metadata to metrics
             metrics = {
                 "query_count": metadata.get("query_count", 0),

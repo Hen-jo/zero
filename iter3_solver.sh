@@ -97,6 +97,7 @@ python -m verl.trainer.main_ppo \
     actor_rollout_ref.rollout.tensor_model_parallel_size=${tp} \
     actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu=${batch_per_gpu} \
     actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu=${batch_per_gpu} \
+    actor_rollout_ref.ref.fsdp_config.param_offload=True \
     actor_rollout_ref.actor.use_kl_loss=False \
     actor_rollout_ref.rollout.multi_turn.tool_config_path="$TOOL_CONFIG" \
     trainer.logger='["console", "tensorboard"]' \

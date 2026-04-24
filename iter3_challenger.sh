@@ -113,7 +113,8 @@ python -m verl.trainer.main_ppo \
     data.train_files=$TRAIN_DATA \
     data.val_files=$VAL_DATA  \
     data.train_batch_size=256 \
-    algorithm.use_kl_in_reward=False \
+    algorithm.use_kl_in_reward=True \
+    algorithm.kl_ctrl.kl_coef=0.001 \
     algorithm.adv_estimator=${algorithm} \
     actor_rollout_ref.model.path=${model} \
     actor_rollout_ref.actor.grad_clip=0.1 \

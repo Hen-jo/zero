@@ -114,7 +114,7 @@ def compute_score(solution_str, ground_truth, method="strict", format_score=0.1,
             print(f"Extracted answer: {answer}")
         else:
             print("Extracted answer: None!")
-        print(f"Solution string (last 600 chars):\n{solution_str[-600:]}")
+        print(f"Solution string:\n{solution_str}")
 
     if answer is None:
         return 0

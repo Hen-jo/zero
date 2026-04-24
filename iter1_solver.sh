@@ -8,7 +8,7 @@ kill -9 $(lsof -t -i :8000);
 tp=2
 dp=4
 gpus=8
-batch_per_gpu=2
+batch_per_gpu=1
 rollout_memory_utilization=0.5
 
 challenger_algorithm=grpo_batch

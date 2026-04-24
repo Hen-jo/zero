@@ -50,26 +50,10 @@ RESUME_PATH="$OUTPUT_DIR/checkpoints/dr-zero/challenger_iter${prev_iter}_ratio${
 
 export TENSORBOARD_DIR=$OUTPUT_DIR/tensorboard
 
-NFS_INDEX='/input/data/Drzero/corpus/e5_Flat.index'
-NFS_CORPUS='/input/data/Drzero/corpus/wiki-18.jsonl'
-LOCAL_CACHE='/tmp/drzero_corpus'
-mkdir -p $LOCAL_CACHE
-
-for FILE in "$NFS_INDEX" "$NFS_CORPUS"; do
-    BASENAME=$(basename "$FILE")
-    if [ ! -f "$LOCAL_CACHE/$BASENAME" ]; then
-        echo "[$(date '+%H:%M:%S')] NFS → 로컬 복사 중: $BASENAME ..."
-        cp "$FILE" "$LOCAL_CACHE/$BASENAME"
-        echo "[$(date '+%H:%M:%S')] 복사 완료: $BASENAME"
-    else
-        echo "[$(date '+%H:%M:%S')] 로컬 캐시 사용: $BASENAME"
-    fi
-done
-
 echo "[$(date '+%H:%M:%S')] [1/3] retrieval server 시작..."
 PYTHONUNBUFFERED=1 python search/retrieval_server.py \
-    --index_path="$LOCAL_CACHE/e5_Flat.index" \
-    --corpus_path="$LOCAL_CACHE/wiki-18.jsonl" \
+    --index_path='/input/data/Drzero/corpus/e5_Flat.index' \
+    --corpus_path='/input/data/Drzero/corpus/wiki-18.jsonl' \
     --retriever_model='/input/model/e5-base-v2' \
     --retriever_name='e5' \
     --topk 3 > $LOG_DIR/retrieval_server.log 2>&1 &

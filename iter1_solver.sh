@@ -108,4 +108,6 @@ python -m verl.trainer.main_ppo \
     trainer.test_freq=25 \
     trainer.val_before_train=False \
     trainer.validation_data_dir=${VAL_DATA_DIR} \
+    trainer.rollout_data_dir=${VAL_DATA_DIR}/train_rollouts \
+    trainer.rollout_log_freq=25 \
     trainer.total_epochs=1 $@

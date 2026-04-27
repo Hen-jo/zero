@@ -261,6 +261,9 @@ trainer:
   # Directory for logging rollout data; no dump if null
   rollout_data_dir: null
 
+  # Frequency (in steps) to dump training rollout conversations; default every 25 steps
+  rollout_log_freq: 25
+
   # Directory for logging validation data; no dump if null
   validation_data_dir: null
 

@@ -155,4 +155,5 @@ python -m verl.trainer.main_ppo \
     trainer.save_freq=25 \
     trainer.test_freq=25 \
     trainer.val_before_train=False \
-    trainer.total_epochs=1 $@
+    trainer.total_epochs=1 \
+    trainer.total_training_steps=50 $@

@@ -8,9 +8,9 @@ grpo_group_size=5
 model=/input/model/Qwen/Qwen2.5-3B-Instruct
 model_name=$(basename "$model" | tr '[:upper:]' '[:lower:]')
 
-OUTPUT_DIR=/input/output/zero
-CKPT_BASE="$OUTPUT_DIR/checkpoints/dr-zero/solver_iter${iter}_ratio${hop_ratio}_${algorithm}_group${grpo_group_size}_${model_name}"
-TARGET_DIR="$CKPT_BASE/solver_iter${iter}_hf"
+OUTPUT_DIR=/input/output/zero_no2
+CKPT_BASE="$OUTPUT_DIR/checkpoints/dr-zero/verifier_iter${iter}_ratio${hop_ratio}_${algorithm}_group${grpo_group_size}_${model_name}"
+TARGET_DIR="$CKPT_BASE/verifier_iter${iter}_hf"
 
 # 최신 global_step 자동 탐지
 LATEST_STEP=$(ls "$CKPT_BASE" | grep '^global_step_' | sort -t_ -k3 -n | tail -1)
@@ -21,7 +21,7 @@ if [ -z "$LATEST_STEP" ]; then
 fi
 
 ACTOR_DIR="$CKPT_BASE/$LATEST_STEP/actor"
-echo "[INFO] iter=${iter}, step=${LATEST_STEP}, actor=${ACTOR_DIR}"
+echo "[INFO] iter=${iter}, step=${LATEST_STEP}, verifier actor=${ACTOR_DIR}"
 echo "[INFO] target=${TARGET_DIR}"
 
 python -m verl.model_merger merge \

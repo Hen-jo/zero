@@ -33,7 +33,7 @@ model=/input/model/Qwen/Qwen2.5-3B-Instruct
 model_name=$(basename "$model" | tr '[:upper:]' '[:lower:]')
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-OUTPUT_DIR=/input/output/revzero
+OUTPUT_DIR=/input/output/zero_no2
 LOG_DIR=$OUTPUT_DIR/logs
 mkdir -p $LOG_DIR
 CONFIG_PATH="$SCRIPT_DIR/config"

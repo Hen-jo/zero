@@ -695,6 +695,27 @@ class RayPPOTrainer:
         # Log to each configured logger
         self.validation_generations_logger.log(self.config.trainer.logger, samples, self.global_steps)
 
+    def _serialize_conversations(self, messages_batch):
+        """Convert non_tensor_batch['messages'] entries to serializable list-of-dicts."""
+        result = []
+        for entry in messages_batch:
+            msgs = entry["messages"] if isinstance(entry, dict) else entry
+            serialized = []
+            for msg in msgs:
+                d = {"role": getattr(msg, "role", "?"), "content": getattr(msg, "content", "") or ""}
+                tool_calls = getattr(msg, "tool_calls", None)
+                if tool_calls:
+                    d["tool_calls"] = [
+                        {
+                            "name": getattr(getattr(tc, "function", tc), "name", str(tc)),
+                            "arguments": getattr(getattr(tc, "function", tc), "arguments", ""),
+                        }
+                        for tc in tool_calls
+                    ]
+                serialized.append(d)
+            result.append(serialized)
+        return result
+
     def _validate(self):
         data_source_lst = []
         reward_extra_infos_dict: dict[str, list] = defaultdict(list)
@@ -704,6 +725,7 @@ class RayPPOTrainer:
         sample_outputs = []
         sample_scores = []
         sample_turns = []
+        sample_conversations = []  # full multi-turn traces
 
         for test_data in self.val_dataloader:
             test_batch = DataProto.from_single_dict(test_data)
@@ -772,6 +794,11 @@ class RayPPOTrainer:
             output_texts = [self.tokenizer.decode(ids, skip_special_tokens=True) for ids in output_ids]
             sample_outputs.extend(output_texts)
 
+            # Collect full multi-turn conversations if available
+            if "messages" in test_output_gen_batch.non_tensor_batch:
+                convs = self._serialize_conversations(test_output_gen_batch.non_tensor_batch["messages"])
+                sample_conversations.extend(convs)
+
             test_batch = test_batch.union(test_output_gen_batch)
             test_batch.meta_info["validate"] = True
 
@@ -798,6 +825,8 @@ class RayPPOTrainer:
 
         # dump generations
         val_data_dir = self.config.trainer.get("validation_data_dir", None)
+        if not val_data_dir:
+            val_data_dir = os.path.join(self.config.trainer.default_local_dir, "val_rollouts")
         if val_data_dir:
             self._dump_generations(
                 inputs=sample_inputs,
@@ -807,6 +836,16 @@ class RayPPOTrainer:
                 dump_path=val_data_dir,
                 sources=np.concatenate(data_source_lst, axis=0),
             )
+            # dump full conversations (with search queries and results)
+            if sample_conversations:
+                import json as _json
+                os.makedirs(val_data_dir, exist_ok=True)
+                conv_path = os.path.join(val_data_dir, f"conversations_{self.global_steps}.jsonl")
+                with open(conv_path, "w", encoding="utf-8") as f:
+                    for i, conv in enumerate(sample_conversations):
+                        score = sample_scores[i] if i < len(sample_scores) else None
+                        f.write(_json.dumps({"step": self.global_steps, "idx": i, "score": score, "conversation": conv}, ensure_ascii=False) + "\n")
+                print(f"Dumped conversations to {conv_path}")
 
         for key_info, lst in reward_extra_infos_dict.items():
             assert len(lst) == 0 or len(lst) == len(sample_scores), f"{key_info}: {len(lst)=}, {len(sample_scores)=}"
@@ -1371,7 +1410,8 @@ class RayPPOTrainer:
 
                     # Log rollout generations if enabled
                     rollout_data_dir = self.config.trainer.get("rollout_data_dir", None)
-                    if rollout_data_dir:
+                    rollout_log_freq = self.config.trainer.get("rollout_log_freq", 25)
+                    if rollout_data_dir and (self.global_steps % rollout_log_freq == 0 or self.global_steps == 1):
                         with marked_timer("dump_rollout_generations", timing_raw, color="green"):
                             inputs = self.tokenizer.batch_decode(batch.batch["prompts"], skip_special_tokens=True)
                             outputs = self.tokenizer.batch_decode(batch.batch["responses"], skip_special_tokens=True)
@@ -1388,6 +1428,17 @@ class RayPPOTrainer:
                                 reward_extra_infos_dict=reward_extra_infos_dict,
                                 dump_path=rollout_data_dir,
                             )
+                            # dump full conversations
+                            if "messages" in batch.non_tensor_batch:
+                                import json as _json
+                                os.makedirs(rollout_data_dir, exist_ok=True)
+                                conv_path = os.path.join(rollout_data_dir, f"conversations_{self.global_steps}.jsonl")
+                                convs = self._serialize_conversations(batch.non_tensor_batch["messages"])
+                                with open(conv_path, "w", encoding="utf-8") as f:
+                                    for i, conv in enumerate(convs):
+                                        score = scores[i] if i < len(scores) else None
+                                        f.write(_json.dumps({"step": self.global_steps, "idx": i, "score": score, "conversation": conv}, ensure_ascii=False) + "\n")
+                                print(f"Dumped train conversations to {conv_path}")
 
                     # validate
                     if (

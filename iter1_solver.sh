@@ -8,7 +8,7 @@ fuser -k 8000/tcp 2>/dev/null || true
 tp=2
 dp=4
 gpus=8
-batch_per_gpu=2
+batch_per_gpu=1
 rollout_memory_utilization=0.5
 
 challenger_algorithm=grpo_batch
@@ -50,26 +50,12 @@ LOG_DIR=$OUTPUT_DIR/logs
 mkdir -p $LOG_DIR
 export TENSORBOARD_DIR=$OUTPUT_DIR/tensorboard
 
-# NFS → 로컬 캐시 복사 (2회차부터는 이미 있으면 스킵)
 NFS_INDEX='/input/data/Drzero/corpus/e5_Flat.index'
 NFS_CORPUS='/input/data/Drzero/corpus/wiki-18.jsonl'
-LOCAL_CACHE='/tmp/drzero_corpus'
-mkdir -p $LOCAL_CACHE
-
-for FILE in "$NFS_INDEX" "$NFS_CORPUS"; do
-    BASENAME=$(basename "$FILE")
-    if [ ! -f "$LOCAL_CACHE/$BASENAME" ]; then
-        echo "[INFO] NFS → 로컬 복사 중: $BASENAME ..."
-        cp "$FILE" "$LOCAL_CACHE/$BASENAME"
-        echo "[INFO] 복사 완료: $BASENAME"
-    else
-        echo "[INFO] 로컬 캐시 사용: $BASENAME"
-    fi
-done
 
 PYTHONUNBUFFERED=1 python search/retrieval_server.py \
-    --index_path="$LOCAL_CACHE/e5_Flat.index" \
-    --corpus_path="$LOCAL_CACHE/wiki-18.jsonl" \
+    --index_path="$NFS_INDEX" \
+    --corpus_path="$NFS_CORPUS" \
     --retriever_model='/input/model/e5-base-v2' \
     --retriever_name='e5' \
     --topk 3 > $LOG_DIR/retrieval_server.log 2>&1 &
@@ -92,7 +78,8 @@ python -m verl.trainer.main_ppo \
     data.val_files="$VAL_DATA"  \
     data.train_batch_size=128 \
     data.max_prompt_length=512 \
-    algorithm.use_kl_in_reward=False \
+    algorithm.use_kl_in_reward=True \
+    algorithm.kl_ctrl.kl_coef=0.001 \
     algorithm.adv_estimator=${algorithm} \
     actor_rollout_ref.model.path=${model} \
     actor_rollout_ref.actor.grad_clip=0.1 \
@@ -110,6 +97,7 @@ python -m verl.trainer.main_ppo \
     actor_rollout_ref.rollout.tensor_model_parallel_size=${tp} \
     actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu=${batch_per_gpu} \
     actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu=${batch_per_gpu} \
+    actor_rollout_ref.ref.fsdp_config.param_offload=True \
     actor_rollout_ref.actor.use_kl_loss=False \
     actor_rollout_ref.rollout.multi_turn.tool_config_path="$TOOL_CONFIG" \
     trainer.logger='["console", "tensorboard"]' \
@@ -118,9 +106,13 @@ python -m verl.trainer.main_ppo \
     trainer.default_local_dir=$OUTPUT_DIR/checkpoints/dr-zero/$SOLVER_NAME \
     trainer.n_gpus_per_node=${gpus} \
     trainer.nnodes=1 \
-    trainer.save_freq=25 \
+    trainer.save_freq=1 \
+    trainer.max_actor_ckpt_to_keep=1 \
     trainer.test_freq=25 \
     trainer.val_before_train=False \
     trainer.validation_data_dir=${VAL_DATA_DIR} \
+    trainer.rollout_data_dir=${VAL_DATA_DIR}/train_rollouts \
+    trainer.rollout_log_freq=25 \
     trainer.total_epochs=1 \
+    trainer.total_training_steps=100 \
     +trainer.save_last_rollout_path="$SOLVER_PRED_OUT" $@

@@ -12,7 +12,7 @@ fuser -k 8001/tcp 2>/dev/null || true
 tp=1   # Qwen2.5-3B ≈ 6GB FP16 → A100 한 장에 충분, TP 불필요
 dp=4   # A100 4개 → dp=4 (GPU당 sglang 서버 1개)
 gpus=8
-batch_per_gpu=2
+batch_per_gpu=1
 rollout_memory_utilization=0.25
 
 hop_ratio=${1:-4321}
@@ -48,26 +48,9 @@ export TENSORBOARD_DIR=$OUTPUT_DIR/tensorboard
 
 echo "[$(date '+%H:%M:%S')] [1/3] retrieval server 시작..."
 
-# NFS → 로컬 캐시 복사 (이미 있으면 스킵)
-NFS_INDEX='/input/data/Drzero/corpus/e5_Flat.index'
-NFS_CORPUS='/input/data/Drzero/corpus/wiki-18.jsonl'
-LOCAL_CACHE='/tmp/drzero_corpus'
-mkdir -p $LOCAL_CACHE
-
-for FILE in "$NFS_INDEX" "$NFS_CORPUS"; do
-    BASENAME=$(basename "$FILE")
-    if [ ! -f "$LOCAL_CACHE/$BASENAME" ]; then
-        echo "[$(date '+%H:%M:%S')] NFS → 로컬 복사 중: $BASENAME ..."
-        cp "$FILE" "$LOCAL_CACHE/$BASENAME"
-        echo "[$(date '+%H:%M:%S')] 복사 완료: $BASENAME"
-    else
-        echo "[$(date '+%H:%M:%S')] 로컬 캐시 사용: $BASENAME"
-    fi
-done
-
 PYTHONUNBUFFERED=1 python $SCRIPT_DIR/search/retrieval_server.py \
-    --index_path="$LOCAL_CACHE/e5_Flat.index" \
-    --corpus_path="$LOCAL_CACHE/wiki-18.jsonl" \
+    --index_path='/input/data/Drzero/corpus/e5_Flat.index' \
+    --corpus_path='/input/data/Drzero/corpus/wiki-18.jsonl' \
     --retriever_model='/input/model/e5-base-v2' \
     --retriever_name='e5' \
     --topk 3 > $LOG_DIR/retrieval_server.log 2>&1 &
@@ -110,7 +93,6 @@ python -m verl.trainer.main_ppo \
     data.train_files=$TRAIN_DATA \
     data.val_files=$VAL_DATA  \
     data.train_batch_size=256 \
-    algorithm.use_kl_in_reward=False \
     algorithm.adv_estimator=${algorithm} \
     actor_rollout_ref.model.path=${model} \
     actor_rollout_ref.actor.grad_clip=0.1 \
@@ -128,6 +110,7 @@ python -m verl.trainer.main_ppo \
     actor_rollout_ref.rollout.tensor_model_parallel_size=${tp} \
     actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu=${batch_per_gpu} \
     actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu=${batch_per_gpu} \
+    actor_rollout_ref.ref.fsdp_config.param_offload=True \
     actor_rollout_ref.actor.use_kl_loss=False \
     actor_rollout_ref.rollout.multi_turn.tool_config_path=$TOOL_CONFIG \
     reward_model.reward_manager=batch \
@@ -142,7 +125,8 @@ python -m verl.trainer.main_ppo \
     trainer.default_local_dir=$OUTPUT_DIR/checkpoints/dr-zero/challenger_iter1_ratio${hop_ratio}_${algorithm}_group${grpo_group_size}-${reward_group_size}_${model_name} \
     trainer.n_gpus_per_node=${gpus} \
     trainer.nnodes=1 \
-    trainer.save_freq=25 \
+    trainer.save_freq=1 \
+    trainer.max_actor_ckpt_to_keep=1 \
     trainer.test_freq=-1 \
     trainer.val_before_train=False \
     trainer.total_epochs=1 \

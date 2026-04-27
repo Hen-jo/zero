@@ -871,9 +871,10 @@ class SGLangRollout(BaseRollout):
                                     for tool_call in parsed_tool_calls
                                 ]
                             ),
-                            timeout=300.0,
+                            timeout=1800.0,
                         )
                     except asyncio.TimeoutError:
+                        print(f"[TOOL_TIMEOUT] req={_req.request_id} tool_calls={[tc.function.name for tc in parsed_tool_calls]}", flush=True)
                         tool_call_results = [("", 0.0, {}) for _ in parsed_tool_calls]
                     _req.add_tool_response_messages(self.processing_class, [resp for resp, _, _ in tool_call_results])
                     for tool_call, (resp, reward, metrics) in zip(parsed_tool_calls, tool_call_results, strict=True):

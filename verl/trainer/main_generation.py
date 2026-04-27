@@ -206,10 +206,14 @@ def main_task(config):
             print("Answer: "+ raw_ans[sample_idx])
 
     all_messages = [[{"role": "user", "content": DEFAULT_SOLVER_PREFIX.format(question=q.strip())}] for q in all_questions]
+    new_prompts = list(dataset['prompt'])
+    new_metadatas = list(dataset['metadata'])
     for idx, (message, gt, context) in enumerate(zip(all_messages, all_answers, all_contexts)):
-        dataset.iloc[idx].prompt = message
-        dataset.iloc[idx].reward_model['ground_truth']['target'] = [gt]
-        dataset.iloc[idx].metadata = {"raw_context": context}
+        new_prompts[idx] = np.array(message)
+        dataset.iloc[idx]['reward_model']['ground_truth']['target'] = [gt]
+        new_metadatas[idx] = {"raw_context": context}
+    dataset['prompt'] = new_prompts
+    dataset['metadata'] = new_metadatas
     
     output_dir = os.path.dirname(config.data.output_path)
     makedirs(output_dir, exist_ok=True)

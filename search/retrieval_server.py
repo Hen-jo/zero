@@ -55,14 +55,15 @@ def load_docs(corpus, doc_idxs):
     return results
 
 
-def load_model(model_path: str, use_fp16: bool = False):
+def load_model(model_path: str):
+    print(f"[load_model] AutoModel.from_pretrained 시작: {model_path}", flush=True)
     model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
     model = AutoModel.from_pretrained(model_path, trust_remote_code=True)
     model.eval()
-    model.cuda()
-    if use_fp16: 
-        model = model.half()
+    print(f"[load_model] 모델 로딩 완료 (CPU 모드)", flush=True)
+    print(f"[load_model] tokenizer 로딩...", flush=True)
     tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=True, trust_remote_code=True)
+    print(f"[load_model] tokenizer 로딩 완료", flush=True)
     return model, tokenizer
 
 
@@ -91,7 +92,7 @@ class Encoder:
         self.max_length = max_length
         self.use_fp16 = use_fp16
 
-        self.model, self.tokenizer = load_model(model_path=model_path, use_fp16=use_fp16)
+        self.model, self.tokenizer = load_model(model_path=model_path)
         self.model.eval()
 
     @torch.no_grad()
@@ -116,7 +117,7 @@ class Encoder:
                                 truncation=True,
                                 return_tensors="pt"
                                 )
-        inputs = {k: v.cuda() for k, v in inputs.items()}
+        inputs = {k: v.to(next(self.model.parameters()).device) for k, v in inputs.items()}
 
         if "T5" in type(self.model).__name__:
             # T5-based retrieval model

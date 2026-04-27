@@ -50,12 +50,13 @@ export TENSORBOARD_DIR=$OUTPUT_DIR/tensorboard
 NFS_INDEX='/input/data/Drzero/corpus/e5_Flat.index'
 NFS_CORPUS='/input/data/Drzero/corpus/wiki-18.jsonl'
 
-PYTHONUNBUFFERED=1 python search/retrieval_server.py \
+CUDA_VISIBLE_DEVICES="6" PYTHONUNBUFFERED=1 python search/retrieval_server.py \
     --index_path="$NFS_INDEX" \
     --corpus_path="$NFS_CORPUS" \
     --retriever_model='/input/model/e5-base-v2' \
     --retriever_name='e5' \
-    --topk 3 > $LOG_DIR/retrieval_server.log 2>&1 &
+    --topk 3 \
+    --faiss_gpu > $LOG_DIR/retrieval_server.log 2>&1 &
 RETRIEVAL_PID=$!
 
 echo "[INFO] retrieval server 대기 중 (port 8000)..."

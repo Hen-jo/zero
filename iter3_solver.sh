@@ -78,6 +78,7 @@ python -m verl.trainer.main_ppo \
     data.train_files="$TRAIN_DATA" \
     data.val_files="$VAL_DATA"  \
     data.train_batch_size=128 \
+    data.val_batch_size=64 \
     data.max_prompt_length=512 \
     algorithm.use_kl_in_reward=True \
     algorithm.kl_ctrl.kl_coef=0.001 \
@@ -109,7 +110,7 @@ python -m verl.trainer.main_ppo \
     trainer.nnodes=1 \
     trainer.save_freq=1 \
     trainer.max_actor_ckpt_to_keep=1 \
-    trainer.test_freq=25 \
+    trainer.test_freq=50 \
     trainer.val_before_train=False \
     trainer.validation_data_dir=${VAL_DATA_DIR} \
     trainer.total_epochs=1 \

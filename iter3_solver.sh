@@ -102,6 +102,7 @@ python -m verl.trainer.main_ppo \
     actor_rollout_ref.ref.fsdp_config.param_offload=True \
     actor_rollout_ref.actor.use_kl_loss=False \
     actor_rollout_ref.rollout.multi_turn.tool_config_path="$TOOL_CONFIG" \
+    actor_rollout_ref.rollout.multi_turn.max_assistant_turns=4 \
     trainer.logger='["console", "tensorboard"]' \
     trainer.project_name="dr-zero" \
     trainer.experiment_name=$SOLVER_NAME \

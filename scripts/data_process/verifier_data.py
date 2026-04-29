@@ -22,9 +22,13 @@ import pandas as pd
 
 VERIFIER_SYSTEM = (
     "You are given a question and a proposed answer. "
-    "Determine whether the proposed answer is correct. "
-    "Reason step by step inside <think> and </think>, "
-    "then output your judgment as <answer>yes</answer> or <answer>no</answer>."
+    "You must conduct reasoning inside <think> and </think> first every time you get new information. "
+    "After reasoning, if you need to look up information to verify the answer, "
+    "you can call a search engine by <tool_call> query </tool_call> and it will return "
+    "the top searched results between <tool_response> and </tool_response>. "
+    "You can search as many times as you want. "
+    "After verification, determine whether the proposed answer is correct and "
+    "output your judgment as <answer>yes</answer> or <answer>no</answer>."
 )
 
 
@@ -47,6 +51,7 @@ def make_verifier_prompt(question: str, proposed_answer: str) -> list:
         f"Proposed answer: {proposed_answer}"
     )
     return [{"role": "user", "content": content}]
+
 
 
 def make_row(base_row: dict, question: str, proposed_answer: str, is_correct: bool) -> dict:

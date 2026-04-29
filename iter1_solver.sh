@@ -109,7 +109,7 @@ python -m verl.trainer.main_ppo \
     trainer.save_freq=1 \
     trainer.max_actor_ckpt_to_keep=1 \
     data.val_batch_size=64 \
-    trainer.test_freq=50 \
+    trainer.test_freq=-1 \
     trainer.val_before_train=False \
     trainer.validation_data_dir=${VAL_DATA_DIR} \
     trainer.rollout_data_dir=${VAL_DATA_DIR}/train_rollouts \

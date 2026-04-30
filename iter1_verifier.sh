@@ -11,8 +11,8 @@ fuser -k 8001/tcp 2>/dev/null || true
 
 tp=2
 dp=4
-gpus=4
-batch_per_gpu=1
+gpus=8
+batch_per_gpu=2
 rollout_memory_utilization=0.5
 
 hop_ratio=${1:-4321}
@@ -52,7 +52,7 @@ SOLVER_PRED_FULL="$OUTPUT_DIR/data/solver_pred_full_${SOLVER_NAME}.parquet"
 VERIFIER_DATA_DIR="$OUTPUT_DIR/data/verifier_${CHALLENGER_NAME}"
 TRAIN_DATA="$VERIFIER_DATA_DIR/train.parquet"
 VAL_DATA="/input/data/Drzero/test.parquet"
-
+    
 LOG_DIR=$OUTPUT_DIR/logs
 mkdir -p $LOG_DIR
 export TENSORBOARD_DIR=$OUTPUT_DIR/tensorboard

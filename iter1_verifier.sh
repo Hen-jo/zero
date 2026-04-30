@@ -11,8 +11,8 @@ fuser -k 8001/tcp 2>/dev/null || true
 
 tp=2
 dp=4
-gpus=8
-batch_per_gpu=2
+gpus=4
+batch_per_gpu=1
 rollout_memory_utilization=0.5
 
 hop_ratio=${1:-4321}

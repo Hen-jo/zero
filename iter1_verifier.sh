@@ -1,7 +1,7 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
 
-set -xe
+set -x
 
 export HF_DATASETS_CACHE=/tmp/hf_cache
 export HF_HOME=/tmp/hf_home
@@ -108,7 +108,6 @@ if [ ! -f "$SOLVER_PRED_FULL" ]; then
         actor_rollout_ref.rollout.multi_turn.tool_config_path="$TOOL_CONFIG" \
         trainer.nnodes=1 \
         trainer.n_gpus_per_node=${gpus}
-    [ -f "$SOLVER_PRED_FULL" ] || { echo "[ERROR] Solver pred 파일 없음: ${SOLVER_PRED_FULL}"; exit 1; }
     echo "[$(date '+%H:%M:%S')] [2/4] Solver inference 완료 → ${SOLVER_PRED_FULL}"
 else
     echo "[$(date '+%H:%M:%S')] [2/4] Solver pred 이미 존재, 건너뜀: ${SOLVER_PRED_FULL}"

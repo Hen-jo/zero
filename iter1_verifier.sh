@@ -44,8 +44,8 @@ CHALLENGER_NAME="challenger_iter1_ratio${hop_ratio}_${challenger_algorithm}_grou
 SOLVER_NAME="solver_iter1_ratio${hop_ratio}_${algorithm}_group${grpo_group_size}_${model_name}"
 VERIFIER_NAME="verifier_iter1_ratio${hop_ratio}_${algorithm}_group${grpo_group_size}_${model_name}"
 
-CHALLENGER_CKPT="${EXP_DIR}/${CHALLENGER_NAME}/global_step_${challenger_step}"
-SOLVER_CKPT="${EXP_DIR}/${SOLVER_NAME}/global_step_${solver_step}"
+CHALLENGER_CKPT="${EXP_DIR}/${CHALLENGER_NAME}/global_step_${challenger_step}/actor/huggingface"
+SOLVER_CKPT="${EXP_DIR}/${SOLVER_NAME}/global_step_${solver_step}/actor/huggingface"
 
 GEN_DATA_PATH="$OUTPUT_DIR/data/zero_${CHALLENGER_NAME}.parquet"
 SOLVER_PRED_FULL="$OUTPUT_DIR/data/solver_pred_full_${SOLVER_NAME}.parquet"

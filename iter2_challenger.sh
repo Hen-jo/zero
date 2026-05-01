@@ -17,8 +17,7 @@ dp=4
 gpus=8
 batch_per_gpu=1
 rollout_memory_utilization=0.25
-reward_memory_utilization=0.35  # each of two reward sglang servers (split across GPU halves)
-growth_lambda=0.5
+reward_memory_utilization=0.5
 
 solver_algorithm=grpo
 solver_grpo_group_size=5
@@ -80,34 +79,21 @@ wait_for_port() {
 
 wait_for_port 8000 $RETRIEVAL_PID $LOG_DIR/retrieval_server.log
 
-echo "[$(date '+%H:%M:%S')] [2/4] sglang 시작 - current solver ($SOLVER_NAME, GPU 4-7, port 8001)..."
-CUDA_VISIBLE_DEVICES=4,5,6,7 python -m sglang.launch_server \
+echo "[$(date '+%H:%M:%S')] [2/3] sglang 시작 - current solver ($SOLVER_NAME, port 8001)..."
+python -m sglang.launch_server \
     --model=$SOLVER_PATH \
     --served-model-name=$SOLVER_NAME \
     --port=8001 \
     --tool-call-parser=qwen25 \
     --mem-fraction-static=${reward_memory_utilization} \
-    --dp-size=4 \
-    --tp-size=1 \
+    --dp-size=${dp} \
+    --tp-size=${tp} \
     --log-level=error > $LOG_DIR/sglang_server.log 2>&1 &
 SGLANG_PID=$!
 
-echo "[$(date '+%H:%M:%S')] [3/4] sglang 시작 - prev solver ($PREV_SOLVER_NAME, GPU 0-3, port 8002)..."
-CUDA_VISIBLE_DEVICES=0,1,2,3 python -m sglang.launch_server \
-    --model=$PREV_SOLVER_PATH \
-    --served-model-name=$PREV_SOLVER_NAME \
-    --port=8002 \
-    --tool-call-parser=qwen25 \
-    --mem-fraction-static=${reward_memory_utilization} \
-    --dp-size=4 \
-    --tp-size=1 \
-    --log-level=error > $LOG_DIR/sglang_prev_server.log 2>&1 &
-PREV_SGLANG_PID=$!
-
 wait_for_port 8001 $SGLANG_PID $LOG_DIR/sglang_server.log
-wait_for_port 8002 $PREV_SGLANG_PID $LOG_DIR/sglang_prev_server.log
 
-echo "[$(date '+%H:%M:%S')] [4/4] 학습 시작: $CHALLENGER_NAME"
+echo "[$(date '+%H:%M:%S')] [3/3] 학습 시작: $CHALLENGER_NAME"
 python -m verl.trainer.main_ppo \
     --config-path=$CONFIG_PATH \
     --config-name="search_multiturn_grpo" \
@@ -137,14 +123,11 @@ python -m verl.trainer.main_ppo \
     actor_rollout_ref.actor.use_kl_loss=False \
     actor_rollout_ref.rollout.multi_turn.tool_config_path=$TOOL_CONFIG \
     reward_model.reward_manager=batch \
-    custom_reward_function.name=compute_challenger_score_batch_growth \
+    custom_reward_function.name=compute_challenger_score_batch \
     custom_reward_function.path=verl/custom_reward/reward_function.py \
     custom_reward_function.reward_kwargs.model_name=$SOLVER_NAME \
     custom_reward_function.reward_kwargs.base_url="http://127.0.0.1:8001" \
-    custom_reward_function.reward_kwargs.prev_model_name=$PREV_SOLVER_NAME \
-    custom_reward_function.reward_kwargs.prev_base_url="http://127.0.0.1:8002" \
     custom_reward_function.reward_kwargs.reward_rollout_n=${reward_group_size} \
-    custom_reward_function.reward_kwargs.growth_lambda=${growth_lambda} \
     trainer.logger='["console", "tensorboard"]' \
     trainer.project_name="dr-zero" \
     trainer.experiment_name=$CHALLENGER_NAME \

@@ -122,18 +122,6 @@ python "$SCRIPT_DIR/scripts/data_process/verifier_data.py" \
 echo "[$(date '+%H:%M:%S')] [3/4] Verifier 데이터 생성 완료 ($(wc -l < /dev/null) 샘플)"
 
 # ── [4/4] Verifier 학습 ───────────────────────────────────────────────────
-echo "[$(date '+%H:%M:%S')] [4/4] sglang 시작 (verifier rollout)..."
-python -m sglang.launch_server \
-    --model=${model} \
-    --port=8001 \
-    --tool-call-parser=qwen25 \
-    --mem-fraction-static=${rollout_memory_utilization} \
-    --dp-size=${dp} \
-    --tp-size=${tp} \
-    --log-level=error > $LOG_DIR/sglang_server.log 2>&1 &
-SGLANG_PID=$!
-wait_for_port 8001 $SGLANG_PID $LOG_DIR/sglang_server.log
-
 echo "[$(date '+%H:%M:%S')] [4/4] Verifier 학습 시작: ${VERIFIER_NAME}"
 python -m verl.trainer.main_ppo \
     --config-path="$CONFIG_PATH" \

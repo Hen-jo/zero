@@ -142,7 +142,7 @@ python "$SCRIPT_DIR/scripts/data_process/verifier_data.py" \
     --gen_data_path="$GEN_DATA_PATH" \
     --solver_pred_path="$SOLVER_PRED_FULL" \
     --local_dir="$VERIFIER_DATA_DIR"
-echo "[$(date '+%H:%M:%S')] [3/4] Verifier 데이터 생성 완료 ($(wc -l < /dev/null) 샘플)"
+echo "[$(date '+%H:%M:%S')] [3/4] Verifier 데이터 생성 완료 → $VERIFIER_DATA_DIR"
 
 # ── [4/4] Verifier 학습 ───────────────────────────────────────────────────
 echo "[$(date '+%H:%M:%S')] [4/4] Verifier 학습 시작: ${VERIFIER_NAME}"
@@ -171,6 +171,7 @@ python -m verl.trainer.main_ppo \
     actor_rollout_ref.rollout.tensor_model_parallel_size=${tp} \
     actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu=${batch_per_gpu} \
     actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu=${batch_per_gpu} \
+    actor_rollout_ref.ref.fsdp_config.param_offload=True \
     actor_rollout_ref.actor.use_kl_loss=False \
     actor_rollout_ref.rollout.multi_turn.tool_config_path=$TOOL_CONFIG \
     reward_model.reward_manager=batch \
@@ -187,3 +188,8 @@ python -m verl.trainer.main_ppo \
     trainer.val_before_train=False \
     trainer.total_epochs=1 \
     trainer.total_training_steps=25 $@
+
+# ── [5/4] Verifier HF 포맷 변환 (iter2용) ────────────────────────────────
+echo "[$(date '+%H:%M:%S')] [5/4] Verifier 체크포인트 → HF 변환 중..."
+bash "$SCRIPT_DIR/convert.sh" 1 ${hop_ratio}
+echo "[$(date '+%H:%M:%S')] [5/4] 변환 완료"

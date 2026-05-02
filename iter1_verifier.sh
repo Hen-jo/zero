@@ -173,6 +173,7 @@ python -m verl.trainer.main_ppo \
     actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu=${batch_per_gpu} \
     actor_rollout_ref.actor.use_kl_loss=False \
     actor_rollout_ref.rollout.multi_turn.tool_config_path=$TOOL_CONFIG \
+    reward_model.reward_manager=batch \
     custom_reward_function.name=compute_verifier_score \
     custom_reward_function.path=verl/custom_reward/verifier_reward_function.py \
     trainer.logger='["console", "tensorboard"]' \

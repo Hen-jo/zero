@@ -183,7 +183,8 @@ python -m verl.trainer.main_ppo \
     trainer.default_local_dir=$OUTPUT_DIR/checkpoints/dr-zero/$VERIFIER_NAME \
     trainer.n_gpus_per_node=${gpus} \
     trainer.nnodes=1 \
-    trainer.save_freq=25 \
+    trainer.save_freq=1 \
+    trainer.max_actor_ckpt_to_keep=1 \
     trainer.test_freq=-1 \
     trainer.val_before_train=False \
     trainer.total_epochs=1 \

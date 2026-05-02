@@ -44,8 +44,8 @@ CHALLENGER_NAME="challenger_iter1_ratio${hop_ratio}_${challenger_algorithm}_grou
 SOLVER_NAME="solver_iter1_ratio${hop_ratio}_${algorithm}_group${grpo_group_size}_${model_name}"
 VERIFIER_NAME="verifier_iter1_ratio${hop_ratio}_${algorithm}_group${grpo_group_size}_${model_name}"
 
-CHALLENGER_CKPT="${EXP_DIR}/${CHALLENGER_NAME}/global_step_${challenger_step}/actor/huggingface"
-SOLVER_CKPT="${EXP_DIR}/${SOLVER_NAME}/global_step_${solver_step}/actor/huggingface"
+CHALLENGER_CKPT="${EXP_DIR}/${CHALLENGER_NAME}/challenger_hf"
+SOLVER_CKPT="${EXP_DIR}/${SOLVER_NAME}/solver_hf"
 
 GEN_DATA_PATH="$OUTPUT_DIR/data/zero_${CHALLENGER_NAME}.parquet"
 SOLVER_PRED_FULL="$OUTPUT_DIR/data/solver_pred_full_${SOLVER_NAME}.parquet"
@@ -71,6 +71,29 @@ wait_for_port() {
     done
     echo "[$(date '+%H:%M:%S')] [INFO] port ${port} 준비 완료"
 }
+
+# ── [0/4] Challenger / Solver 체크포인트 변환 ─────────────────────────────
+if [ ! -d "$CHALLENGER_CKPT" ]; then
+    echo "[$(date '+%H:%M:%S')] [0/4] Challenger 체크포인트 변환 중..."
+    python -m verl.model_merger merge \
+        --backend fsdp \
+        --local_dir "${EXP_DIR}/${CHALLENGER_NAME}/global_step_${challenger_step}/actor" \
+        --target_dir "$CHALLENGER_CKPT"
+    echo "[$(date '+%H:%M:%S')] [0/4] Challenger 변환 완료: $CHALLENGER_CKPT"
+else
+    echo "[$(date '+%H:%M:%S')] [0/4] Challenger 이미 변환됨, 건너뜀: $CHALLENGER_CKPT"
+fi
+
+if [ ! -d "$SOLVER_CKPT" ]; then
+    echo "[$(date '+%H:%M:%S')] [0/4] Solver 체크포인트 변환 중..."
+    python -m verl.model_merger merge \
+        --backend fsdp \
+        --local_dir "${EXP_DIR}/${SOLVER_NAME}/global_step_${solver_step}/actor" \
+        --target_dir "$SOLVER_CKPT"
+    echo "[$(date '+%H:%M:%S')] [0/4] Solver 변환 완료: $SOLVER_CKPT"
+else
+    echo "[$(date '+%H:%M:%S')] [0/4] Solver 이미 변환됨, 건너뜀: $SOLVER_CKPT"
+fi
 
 # ── [1/4] Retrieval server ────────────────────────────────────────────────
 echo "[$(date '+%H:%M:%S')] [1/4] retrieval server 시작..."

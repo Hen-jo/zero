@@ -19,8 +19,8 @@ batch_per_gpu=1
 rollout_memory_utilization=0.25
 reward_memory_utilization=0.5
 
-solver_algorithm=grpo
-solver_grpo_group_size=5
+solver_algorithm=grpo_batch
+solver_grpo_group_size=1
 
 hop_ratio=${1:-4321}
 if [ $# -ge 1 ]; then

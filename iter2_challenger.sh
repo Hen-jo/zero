@@ -19,8 +19,8 @@ batch_per_gpu=1
 rollout_memory_utilization=0.25
 reward_memory_utilization=0.5
 
-solver_algorithm=grpo_batch
-solver_grpo_group_size=1
+solver_algorithm=grpo
+solver_grpo_group_size=5
 
 hop_ratio=${1:-4321}
 if [ $# -ge 1 ]; then
@@ -43,11 +43,9 @@ TOOL_CONFIG="$CONFIG_PATH/search_tool_config.yaml"
 TRAIN_DATA="/input/data/Drzero/zero_ratio${hop_ratio}.parquet"
 VAL_DATA="/input/data/Drzero/test.parquet"
 
-SOLVER_NAME="verifier_iter${prev_iter}_hf"
-PREV_SOLVER_NAME="base_model"  # iter2: previous solver = base model
+SOLVER_NAME="solver_hf"
 CHALLENGER_NAME="challenger_iter${cur_iter}_ratio${hop_ratio}_${algorithm}_group${grpo_group_size}-${reward_group_size}_${model_name}"
-SOLVER_PATH="$OUTPUT_DIR/checkpoints/dr-zero/verifier_iter${prev_iter}_ratio${hop_ratio}_${solver_algorithm}_group${solver_grpo_group_size}_${model_name}/${SOLVER_NAME}"
-PREV_SOLVER_PATH=${model}  # iter2: previous solver = base model
+SOLVER_PATH="$OUTPUT_DIR/checkpoints/dr-zero/solver_iter${prev_iter}_ratio${hop_ratio}_${solver_algorithm}_group${solver_grpo_group_size}_${model_name}/${SOLVER_NAME}"
 RESUME_PATH="$OUTPUT_DIR/checkpoints/dr-zero/challenger_iter${prev_iter}_ratio${hop_ratio}_${algorithm}_group${grpo_group_size}-${reward_group_size}_${model_name}/global_step_50"
 
 

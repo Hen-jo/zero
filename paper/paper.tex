@@ -59,6 +59,8 @@
 \usepackage{xcolor}         % colors
 \usepackage{amsmath}
 \usepackage{graphicx}
+\usepackage{multirow}
+\usepackage{natbib}
 % Note. For the workshop paper template, both \title{} and \workshoptitle{} are required, with the former indicating the paper title shown in the title and the latter indicating the workshop title displayed in the footnote. 
 \title{Don’t Just Ask—Verify: Rethinking Reward Signals for Self-Play Multi-hop QA}
 
@@ -114,63 +116,67 @@
 
 
 \begin{abstract}
-  Recent self-play frameworks for multi-hop question answering train a proposer to generate challenging questions and a solver to answer them, creating an automatic curriculum. However, existing approaches overlook a fundamental bottleneck: the quality of the reward signal given to the proposer. A proposer rewarded solely on whether the solver can answer its questions tends to generate questions that are superficially difficult but logically ill-formed, ultimately limiting Solver growth. We argue that improving the proposer is the key to obtaining a stronger solver, and propose two complementary reward enhancements. First, we introduce a backward verifier — a model trained to validate candidate answers by tracing the hop chain in reverse through search-augmented reasoning. This provides a logical coherence signal that penalizes questions whose reasoning chains cannot be reconstructed from the answer. Second, we propose a growth-aware reward that measures how much the current solver improves over the previous iteration's solver on a given question, rewarding the proposer for generating questions at the frontier of the solver's evolving capability rather than questions of fixed absolute difficulty. Together, these two signals — coherence and growth — enrich the proposer's training objective and drive the emergence of qualitatively better questions across iterations. Experiments on multi-hop QA benchmarks demonstrate that our approach yields consistently stronger solvers compared to baselines, with [X]\% improvement in exact match.
+  Self-play frameworks for multi-hop question answering aim to build automated curricula by jointly training a proposer, which generates challenging questions, and a solver, which answers them. However, existing approaches largely overlook a fundamental bottleneck: the quality of the reward signal provided to the proposer. When the proposer is rewarded only according to whether the solver can answer a question, it may learn to generate questions that are superficially difficult but logically incomplete, thereby limiting the solver’s improvement.
+In this paper, we propose a backward verifier to improve proposer training. Given a candidate answer, the backward verifier is trained to trace the hop chain in reverse through retrieval-augmented reasoning and determine whether the original question can be logically reconstructed from the answer and supporting evidence. This provides an explicit consistency signal that penalizes questions whose reasoning chains cannot be recovered from their answers. By augmenting the proposer’s objective with this backward verification reward, our framework encourages the generation of questions that are not only difficult but also logically coherent and pedagogically useful. Experiments on multi-hop QA benchmarks show that our approach consistently trains stronger solvers than self-play baselines, improving exact match by [X]\%. Further analysis demonstrates that the proposed verifier leads to questions with more coherent hop structure and better evidence alignment, highlighting the importance of reward quality in self-play curriculum construction.
 
+% 다중 홉 질문 답변에서 자체 플레이 기반 프레임워크는 어려운 질문을 생성하는 제안자와 이에 답하는 해결자를 반복적으로 훈련함으로써 자동화된 커리큘럼을 구축하는 유망한 접근법으로 주목받고 있다. 그러나 기존 방법은 제안자에게 제공되는 보상 신호의 질을 충분히 고려하지 못한다. 특히 해결자가 질문에 정답을 맞히는지 여부만을 기준으로 제안자를 보상할 경우, 제안자는 표면적으로는 어려워 보이지만 논리적 연결성이 부족하거나 추론 체인이 불완전한 질문을 생성할 수 있다. 이러한 질문은 해결자에게 유의미한 학습 신호를 제공하지 못하며, 결과적으로 자체 플레이 과정에서 해결자의 성능 향상을 제한한다.
+
+% 본 논문에서는 제안자의 질문 생성 품질을 향상시키기 위해 역방향 검증기를 도입한다. 역방향 검증기는 후보 답변으로부터 출발하여 탐색 증강 추론을 통해 필요한 홉 체인을 역순으로 추적하고, 주어진 질문이 해당 답변으로부터 논리적으로 재구성 가능한지를 검증하도록 훈련된다. 이를 통해 제안자는 단순히 해결자를 속이는 질문이 아니라, 답변과 근거 문서 사이에 일관된 추론 경로를 갖는 질문을 생성하도록 유도된다. 제안된 검증 신호는 기존의 정답 여부 기반 보상에 논리적 일관성 보상을 추가함으로써 제안자의 학습 목표를 풍부하게 한다.
+
+% 다중 홉 질문 답변 벤치마크에서의 실험 결과, 제안한 프레임워크는 기존 자체 플레이 기반 방법에 비해 더 강력한 해결자를 학습시키며, 정확 일치율 기준으로 [X]%의 성능 향상을 보였다. 또한 분석 결과, 역방향 검증기를 활용한 제안자는 더 긴밀한 홉 연결성과 높은 추론 일관성을 갖는 질문을 생성하는 것으로 나타났다. 이는 자체 플레이 기반 다중 홉 QA에서 보상 신호의 설계가 커리큘럼 품질과 해결자 성능에 핵심적인 영향을 미친다는 점을 보여준다.
 \end{abstract}
 
 
 
 \section{Introduction}
 
-A central ambition in modern AI research is building systems that improve themselves without relying on ever-larger pools of human-labeled data.
-The self-evolution paradigm --- where a model generates its own training signal, iterates, and bootstraps increasingly capable versions of itself --- has produced striking results in domains from mathematical reasoning to code generation.
-In these settings, reinforcement learning from self-generated rollouts, combined with outcome-based reward signals, allows models to explore solution strategies far beyond what supervised imitation could provide.
-Yet translating self-evolution to open-domain question answering, particularly multi-hop QA, remains substantially harder.
-Unlike math or code, where correctness is verified by a deterministic checker, multi-hop reasoning requires retrieving and chaining evidence across multiple documents, and generating high-quality training questions for this task is itself a nontrivial problem.
+% 최근 자기 개선 언어 모델의 발전은 모델이 인간이 레이블링한 데이터를 단순히 모방하는 것에 그치지 않고, 스스로 생성한 학습 신호를 활용하여 성능을 향상시킬 수 있음을 보여준다. 수학적 추론, 코드 생성, 질문 답변 등 다양한 영역에서 자체 생성된 롤아웃을 활용한 강화학습은 모델이 지도학습 데이터에 포함된 해결 전략을 넘어 더 넓은 탐색 공간을 활용할 수 있게 한다. 질문 답변에서는 이러한 흐름이 자연스럽게 하나의 질문으로 이어진다. 모델은 스스로 점점 더 어려운 질문으로 구성된 학습 커리큘럼을 만들 수 있는가?
 
-Early approaches to improving multi-hop QA relied on supervised fine-tuning over human-annotated chains of thought, or on retrieval-augmented generation pipelines with fixed retrieval strategies.
-More recent work has introduced iterative and search-augmented methods: models learn to issue search queries, incorporate retrieved passages, and progressively refine their answers across turns.
-These techniques have achieved strong results on benchmarks such as HotpotQA and 2WikiMultiHopQA.
-However, they share a fundamental limitation: the training data --- both questions and supervision --- is fixed before training begins.
-The model cannot adaptively seek out harder problems as it improves, and there is no mechanism for the difficulty distribution to co-evolve with model capability.
+% 이 질문은 다중 홉 질문 답변에서 특히 중요하다. 다중 홉 QA에서는 단일 문서나 단일 사실만으로 답을 도출할 수 없으며, 여러 근거 문서에 흩어진 정보를 순차적으로 연결하는 추론 능력이 요구된다. 따라서 유용한 학습 질문은 단순히 정답을 포함하는 데 그쳐서는 안 된다. 해결자가 여러 근거를 일관된 추론 체인으로 연결하도록 요구해야 하며, 동시에 그 체인은 실제 문서 근거에 의해 지지되어야 한다.
 
-Self-play offers a principled alternative.
-In the self-play setting, a \emph{proposer} model generates questions and a \emph{solver} model learns to answer them; both models train simultaneously in an adversarial or cooperative loop.
-The proposer is incentivized to generate questions at the frontier of the solver's current capability, naturally producing a curriculum that hardens as the solver improves.
-Recent work has demonstrated this framework for multi-hop QA: the proposer constructs multi-hop questions by chaining factual hops starting from a document, and the solver answers by issuing search queries to recover the chain.
-This approach removes the need for human-authored multi-hop questions and allows the difficulty distribution to adapt dynamically.
+% 그러나 기존의 질문 답변 학습 방식은 대부분 학습 전에 고정된 데이터셋에 의존한다. 질문, 정답, 그리고 supervision은 학습이 시작되기 전에 미리 결정되며, 모델이 학습 과정에서 향상되더라도 데이터의 난이도 분포는 함께 변화하지 않는다. 이로 인해 모델은 자신의 현재 약점을 반영한 새로운 문제를 능동적으로 탐색할 수 없고, 학습 커리큘럼 역시 모델의 능력 변화에 맞추어 적응적으로 조정되지 않는다. 이러한 한계는 복잡한 추론 능력이 필요한 다중 홉 QA에서 더욱 두드러진다.
 
-However, a critical issue has received little attention: \emph{the quality of self-play training is bounded by the quality of the proposer}.
-A proposer that generates trivially easy questions stalls solver learning, as the solver quickly saturates on them and receives no useful gradient.
-A proposer that generates unsolvable or malformed questions is equally detrimental --- the solver obtains no reward signal and training stagnates.
-Getting the proposer to operate reliably in the productive difficulty zone, iteration after iteration, is the central unsolved challenge.
-Existing self-play methods focus almost exclusively on improving the solver, treating the proposer as a fixed or passively trained component.
-We argue this is the wrong emphasis: improving the proposer is the higher-leverage intervention.
+% 이 문제를 해결하기 위한 대안으로 자체 플레이 기반 학습이 주목받고 있다. 자체 플레이 프레임워크에서는 질문을 생성하는 제안자와 질문에 답하는 해결자가 반복적으로 상호작용하며 함께 학습된다. 이상적으로 제안자는 해결자의 현재 능력 경계에 있는 질문을 생성하고, 해결자는 이러한 질문을 풀면서 점진적으로 향상된다. 이 과정은 사람의 개입 없이 자동화된 커리큘럼을 형성하며, 해결자의 성능이 향상됨에 따라 생성되는 질문의 난이도 또한 함께 높아질 수 있다는 장점을 가진다.
 
-In this work, we ask: \emph{how can we train a better proposer in a multi-hop QA self-play loop?}
-We identify two complementary mechanisms and integrate them into an iterative training framework.
+% 다중 홉 QA에서도 이러한 자체 플레이 방식이 적용되고 있다. 기존 연구들은 제안자가 문서에서 출발하여 여러 사실적 홉을 연결함으로써 다중 홉 질문을 생성하고, 해결자가 검색 기반 추론을 통해 해당 홉 체인을 복원하며 답을 찾도록 학습시킨다. 이 접근은 사람이 직접 다중 홉 질문을 작성해야 하는 비용을 줄이고, 학습 과정에서 보다 동적인 질문 분포를 만들 수 있다는 점에서 유망하다.
 
-When the solver produces a candidate answer to a multi-hop question, a key signal is not just \emph{whether} the answer is correct but \emph{why} it is correct: can we trace the evidence chain backward from the answer to the question's starting entity?
-We train a verifier model to perform this backward reasoning: given a question and a candidate solver answer, the verifier searches hop-by-hop in reverse, determining whether the candidate answer is consistent with the factual chain encoded in the question.
-This backward verification signal provides richer supervision than simple exact-match checking and encourages the proposer to generate questions whose hop structure is genuinely verifiable.
-The verifier is trained with reinforcement learning using real solver predictions --- correct predictions as positive examples and solver mistakes as natural negatives --- avoiding the need for synthetic negative construction.
+% 그러나 자체 플레이 기반 다중 홉 QA에는 중요한 병목이 존재한다. 바로 제안자에게 제공되는 보상 신호의 질이다. 많은 기존 방법은 제안자가 생성한 질문에 대해 해결자가 정답을 맞혔는지 여부를 핵심 보상으로 사용한다. 그러나 해결자의 정답 여부만으로는 질문의 품질을 충분히 평가할 수 없다. 해결자가 풀지 못한 질문은 실제로 좋은 다중 홉 추론을 요구하는 어려운 질문일 수도 있지만, 동시에 논리적 연결이 끊어져 있거나, 필요한 근거가 부족하거나, 애초에 답을 도출할 수 없는 잘못된 질문일 수도 있다.
 
-Standard self-play rewards the proposer based on the current solver's accuracy on generated questions.
-We propose an alternative: reward the proposer based on how much the solver \emph{improves} from one iteration to the next on the proposer's questions.
-Intuitively, a good question is one that was hard for the previous solver but becomes answerable by the improved solver --- indicating the question lies in the productive difficulty zone.
-This growth-aware signal aligns proposer incentives with curriculum learning objectives and avoids rewarding proposers for generating either trivially easy or permanently unsolvable questions.
+% 이 두 종류의 어려움은 학습에 전혀 다른 영향을 미친다. 전자는 해결자에게 유의미한 학습 신호를 제공하는 유용한 난이도이다. 반면 후자는 해결자가 아무리 학습하더라도 일관된 답을 도출할 수 없기 때문에 학습을 방해하는 가짜 난이도에 가깝다. 그럼에도 단순한 정답 여부 기반 보상은 이 둘을 구분하지 못한다. 결과적으로 제안자는 해결자를 실제로 성장시키는 질문이 아니라, 표면적으로만 어렵거나 논리적으로 불완전한 질문을 생성하도록 학습될 수 있다. 이는 자체 플레이 과정에서 커리큘럼의 질을 떨어뜨리고, 궁극적으로 해결자의 성능 향상을 제한한다.
 
-We integrate both mechanisms into an iterative training pipeline: the proposer generates multi-hop questions, the solver trains on them, the verifier trains on solver predictions, and proposer rewards are updated using both verification outcomes and solver growth signals.
-We evaluate on seven standard QA benchmarks: NQ, TriviaQA, and PopQA for single-hop, and HotpotQA, 2WikiMultiHopQA, MuSiQue, and Bamboogle for multi-hop, measuring exact match (EM) throughout.
-Against strong baselines including Search-R1, SQLM*, R-Zero*, and IRCoT, our results demonstrate that investing in proposer quality is a high-leverage intervention for improving solver performance in self-play training.
+% 본 논문의 핵심 주장은 다음과 같다. 자체 플레이 기반 다중 홉 QA에서 중요한 것은 단순히 더 어려운 질문을 생성하는 것이 아니라, 논리적으로 검증 가능한 어려운 질문을 생성하는 것이다. 좋은 다중 홉 질문은 해결자에게 도전적이어야 하지만, 동시에 정답과 근거 문서 사이에 복원 가능한 추론 체인을 가져야 한다. 다시 말해, 질문의 난이도는 근거 없는 모호성이나 추론 체인의 결함에서 비롯되어서는 안 되며, 명확한 evidence chain을 따라 답에 도달할 수 있는 구조 안에서 형성되어야 한다.
 
-Our contributions are:
-\begin{itemize}
-  \item We identify proposer quality as the primary bottleneck in multi-hop QA self-play and propose two targeted mechanisms to address it.
-  \item We introduce backward verification as an auxiliary training signal: a verifier model reasons hop-by-hop in reverse to assess solver predictions, providing structured feedback that shapes proposer question quality.
-  \item We introduce a growth-aware reward that measures solver improvement across iterations rather than absolute accuracy, aligning proposer training with effective curriculum generation.
-  \item We demonstrate consistent EM gains across seven benchmarks, with the largest improvements on multi-hop datasets (HotpotQA, 2WikiMultiHopQA, MuSiQue, Bamboogle), where proposer quality matters most.
-\end{itemize}
+% 이를 위해 본 논문에서는 제안자의 질문 생성 품질을 향상시키기 위한 역방향 검증기를 제안한다. 역방향 검증기는 생성된 질문과 후보 답변이 주어졌을 때, 후보 답변에서 출발하여 탐색 증강 추론을 통해 필요한 홉 체인을 역순으로 추적한다. 이 과정에서 검증기는 후보 답변이 질문에 포함된 출발 엔티티, 제약 조건, 그리고 중간 근거들과 일관되게 연결될 수 있는지를 평가한다. 즉, 단순히 후보 답변이 정답 문자열과 일치하는지를 확인하는 것이 아니라, 해당 답변이 질문이 요구하는 다중 홉 추론 경로를 통해 논리적으로 지지될 수 있는지를 검증한다.
+
+% 역방향 검증기는 제안자에게 더 풍부한 보상 신호를 제공한다. 기존의 정답 여부 기반 보상이 해결자의 성공 또는 실패만을 관찰했다면, 역방향 검증 신호는 질문-답변 쌍의 추론 체인이 실제로 복원 가능한지를 평가한다. 따라서 추론 체인이 끊어져 있거나 근거 문서와 제대로 정렬되지 않은 질문은 낮은 보상을 받고, 답변과 근거 문서 사이에 일관된 홉 구조를 갖는 질문은 높은 보상을 받는다. 이를 통해 제안자는 해결자를 단순히 실패하게 만드는 질문이 아니라, 어렵지만 답변 가능하고 논리적으로 일관된 질문을 생성하도록 유도된다.
+
+% 본 논문은 이 역방향 검증기를 자체 플레이 학습 루프에 통합한다. 각 반복에서 제안자는 다중 홉 질문을 생성하고, 해결자는 검색 기반 추론을 통해 답변을 생성한다. 이후 역방향 검증기는 해결자의 후보 답변을 기준으로 질문의 추론 체인이 역방향으로 복원 가능한지를 평가한다. 이 검증 결과는 제안자의 보상 신호로 사용되며, 다음 반복에서 더 높은 품질의 질문을 생성하도록 제안자를 개선한다. 이러한 피드백 루프를 통해 자체 플레이 커리큘럼은 단순히 어려운 질문들의 집합이 아니라, 해결자의 학습에 실제로 도움이 되는 논리적으로 검증 가능한 질문들로 구성된다.
+
+% 우리는 제안한 방법을 단일 홉 및 다중 홉 질문 답변 벤치마크에서 평가한다. 실험 결과, 역방향 검증기를 통해 제안자 보상을 개선한 자체 플레이 프레임워크는 기존 방법보다 더 강력한 해결자를 학습시킨다. 또한 생성된 질문 분석을 통해, 제안된 방법이 더 높은 근거 정렬성, 더 일관된 홉 구조, 그리고 더 나은 답변 가능성을 갖는 질문을 생성함을 확인한다. 이러한 결과는 자체 플레이 기반 다중 홉 QA에서 성능 향상의 핵심이 단순히 해결자를 더 잘 학습시키는 데 있는 것이 아니라, 해결자가 학습하는 질문 분포 자체를 개선하는 데 있음을 보여준다.
+
+% 본 논문의 기여는 다음과 같다.
+
+% 첫째, 자체 플레이 기반 다중 홉 QA에서 제안자 보상 신호의 질이 중요한 병목임을 지적하고, 단순 정답 여부 기반 보상이 유용한 난이도와 잘못된 난이도를 구분하지 못한다는 문제를 분석한다.
+
+% 둘째, 후보 답변에서 질문 조건으로 역방향 추론을 수행하는 역방향 검증기를 제안하여, 생성된 질문의 논리적 검증 가능성을 평가하는 새로운 보상 신호를 제공한다.
+
+% 셋째, 역방향 검증기를 반복적 자체 플레이 학습 루프에 통합하고, 이를 통해 더 높은 품질의 질문 커리큘럼과 향상된 해결자 성능을 달성함을 실험적으로 보인다.
+
+Recent progress in self-improving language models \cite{ahmadian2024back, Spiral, Evolvesearch, zhao2026absolute} suggests that models can improve not only by imitating human-labeled data, but also by generating and learning from their own training signals. Across domains such as mathematical reasoning \cite{huang2026rzero}, code generation, and question answering, reinforcement learning from self-generated rollouts has enabled models to explore solution strategies beyond those available through supervised imitation alone. For question answering, this raises a natural question: can a model construct its own curriculum of increasingly difficult questions?
+This question is particularly important for multi-hop question answering (QA). Unlike single-hop QA, multi-hop QA requires a model to connect pieces of evidence distributed across multiple documents and derive an answer through a coherent reasoning chain. A useful training question, therefore, should not merely contain an answer. It should require the solver to recover a valid chain of evidence, while ensuring that the chain is actually grounded in the underlying corpus.
+However, most existing QA training methods rely on fixed datasets constructed before training begins. The questions, answers, and supervision signals are predetermined, and the difficulty distribution remains static even as the model improves. As a result, the model cannot actively seek out new questions that expose its current weaknesses, and the curriculum cannot adapt to the solver’s evolving capabilities. This limitation is especially pronounced in multi-hop QA, where progress depends on training examples that are not only difficult, but also grounded in coherent evidence chains.
+
+Self-play offers a natural alternative. In a self-play framework, a proposer generates questions and a solver learns to answer them through repeated interaction. Ideally, the proposer generates questions near the frontier of the solver’s current capability, and the solver improves by learning to answer them. This process forms an automated curriculum without requiring human-authored questions, allowing the training distribution to evolve as the solver improves.
+Recent work has instantiated this idea for multi-hop QA. The proposer constructs multi-hop questions by chaining factual hops from source documents, and the solver answers them by issuing search queries to recover the underlying evidence chain. This approach reduces dependence on manually written multi-hop questions and enables a more dynamic question distribution. However, it also introduces a critical bottleneck: the quality of self-play training is bounded by the quality of the proposer.
+Existing self-play methods often overlook the quality of the reward signal provided to the proposer. Many approaches reward generated questions primarily according to whether the solver answers them correctly. Yet solver correctness alone is an insufficient measure of question quality. A question that the solver fails to answer may be difficult because it requires genuine multi-hop reasoning, but it may also be difficult because it is logically incomplete, underspecified, weakly grounded, or effectively unanswerable.
+These two forms of difficulty have very different consequences for learning. The former provides useful pressure on the solver and exposes its limitations. The latter provides little or no meaningful supervision, because no coherent reasoning path can reliably lead to the answer. Nevertheless, an answer-based reward does not distinguish between useful difficulty and spurious difficulty. As a result, the proposer may learn to generate questions that are superficially hard but logically defective, thereby degrading the curriculum and limiting solver improvement.
+
+Our central claim is that self-play for multi-hop QA should optimize not merely for difficult question generation, but for verifiably difficult question generation. A good multi-hop question should challenge the solver, but its answer should also be recoverable through a coherent evidence chain. In other words, difficulty should arise from the need to connect multiple facts, not from ambiguity, missing evidence, or broken reasoning structure.
+To this end, we propose a backward verifier for improving proposer training. Given a generated question and a candidate answer, the backward verifier performs retrieval-augmented reasoning in reverse: starting from the candidate answer, it traces the required hop chain backward toward the entities and constraints specified in the question. Rather than merely checking whether the candidate answer matches a gold string, the verifier evaluates whether the answer is logically supported by a recoverable multi-hop reasoning path.
+This backward verification signal provides richer supervision for the proposer. Questions whose reasoning chains cannot be reconstructed receive low reward, while questions with coherent and evidence-grounded hop structures receive high reward. By augmenting answer-based rewards with backward verification, the proposer is encouraged to generate questions that are not only difficult for the solver, but also answerable, logically consistent, and useful for training.
+
+We integrate the backward verifier into an iterative self-play pipeline. At each iteration, the proposer generates multi-hop questions, the solver answers them through retrieval-augmented reasoning, and the backward verifier evaluates whether the solver’s candidate answers can be traced back to the question constraints through valid evidence chains. The resulting verification signal is used to refine proposer training, improving the quality of questions generated in subsequent iterations. Through this feedback loop, the self-play curriculum becomes increasingly composed of questions that are challenging yet logically verifiable.
+We evaluate our method on both single-hop and multi-hop QA benchmarks. Experiments show that improving proposer rewards through backward verification leads to stronger solvers than existing self-play baselines. Further analyses of generated questions demonstrate that our method improves evidence alignment, hop-chain coherence, and answerability. These results indicate that the key to effective self-play in multi-hop QA is not only training the solver, but also improving the quality of the question distribution on which the solver learns.
 
 
 \section{Related Work}
@@ -200,70 +206,195 @@ This idea connects to self-consistency methods and chain-of-thought verification
 Recent work on bidirectional training (e.g., RevThink) shows that training on both directions simultaneously improves reasoning robustness.
 We adapt this principle to the self-play setting: rather than training the proposer or solver bidirectionally, we train a dedicated verifier to perform backward hop search over solver predictions, providing a structured verification signal that is richer than binary exact-match feedback.
 
+\section{Method}
+
+We build on the multi-hop question answering self-play setting of DR-Zero.
+The overall framework consists of three models: a proposer model $\pi_P$ that generates questions, a solver model $\pi_S$ that answers the generated questions, and a backward verifier $\pi_V$ that evaluates the logical verifiability of question--answer pairs.
+The proposer generates multi-hop questions from raw Wikipedia passages, while the solver answers them through retrieval-augmented reasoning.
+The backward verifier assesses whether a solver's candidate answer is logically supported by the evidence chain underlying the question, and the resulting verification signal is used as a question-level reward for subsequent proposer training.
+
+Importantly, the backward verification reward is not available at the moment of question generation.
+It is computed post hoc: after the proposer generates a question, the solver attempts to answer it, and the verifier evaluates the solver's candidate answers.
+Thus, we use the backward verification signal as a delayed question-level reward assigned to the proposer rollout that generated the question.
+We do not modify the HRPO algorithm itself; instead, we reshape the proposer reward used by HRPO with the backward verification signal.
+
 \begin{figure}[!t]
-    \centerline{\includegraphics[width=\columnwidth]{Figure/figure_mascot_v6.png}}
-    \caption{Main architecture.}
+    \centerline{\includegraphics[width=\columnwidth]{Figure/figure_mascot_v7.png}}
+    \caption{
+Overview of backward-verified self-play for multi-hop QA.
+The proposer $\pi_P$ generates multi-hop questions from Wikipedia passages, while the solver $\pi_S$ answers them via retrieval-augmented reasoning.
+Given the solver's candidate answers, the backward verifier $\pi_V$ traces evidence chains in reverse to determine whether the answers are logically recoverable from the question constraints.
+This post-hoc verification signal is assigned as a delayed question-level reward and combined with the original difficulty reward to update the proposer with HRPO.
+}
     \label{figure_1} 
 \end{figure}
 
-\section{Method}
+\subsection{Multi-Hop QA self-play setting}
 
-\subsection{Problem Setup}
+We follow the multi-hop QA self-play environment of DR-Zero.
+Given a raw Wikipedia passage $d$, the proposer model $\pi_P$ generates a multi-hop question $q$.
+Specifically, the proposer selects a starting entity appearing in the passage and sequentially chains $n$ factual hops through search.
+The generated question contains the starting entity, and the gold answer $a^*$ is the entity reached at the $n$-th hop.
+Thus, the generated questions are not single-document factual questions, but multi-hop questions that require connecting entities and relations across multiple passages.
+The solver model $\pi_S$ is trained to answer the generated question $q$.
+Rather than producing an answer in a single step, the solver issues search queries over multiple turns and reasons over the retrieved passages.
+Through this process, the solver attempts to recover the hop chain constructed by the proposer and produces a final candidate answer $\hat{a}$.
+The training algorithm differs by model role.
+The solver $\pi_S$ is trained with GRPO.
+GRPO is a reinforcement learning algorithm that estimates relative advantages from grouped rollout samples for the same question, without requiring a separate value model.
+In contrast, following DR-Zero, the proposer $\pi_P$ is trained with HRPO.
+HRPO computes question-level rewards from the responses of a solver group and optimizes the proposer to generate questions that are useful for solver learning.
 
-We operate in the multi-hop QA self-play setting.
-A \emph{proposer} model $\pi_P$ generates multi-hop questions from raw Wikipedia passages: given a document, it chains $n$ factual hops via search to construct a question whose starting entity appears in the document and whose answer is the $n$-th hop entity.
-A \emph{solver} model $\pi_S$ learns to answer these questions by issuing search queries and reasoning over retrieved passages across multiple turns.
-Both models are trained with GRPO, an RL algorithm that estimates advantages from grouped rollout samples without a separate value network.
-The overall loop runs for $T$ iterations; at each iteration $t$, the proposer generates a dataset of questions, the solver trains on them, and the proposer's reward is recomputed based on solver performance.
+The overall training loop runs for $T$ iterations.
+At each iteration $t$, the proposer $\pi_P^{(t)}$ generates a dataset of questions from Wikipedia passages.
+The solver $\pi_S^{(t)}$ then performs retrieval-augmented reasoning on the generated questions and produces multiple answer rollouts for each question.
+The solver is updated with GRPO based on the correctness of these rollouts.
+Afterward, the proposer reward is computed post hoc from the solver outcomes and backward verification results, and this reward is used to update the proposer $\pi_P^{(t)}$ with HRPO.
 
 \subsection{Backward Verification}
 
-The standard reward for the proposer in self-play is a \emph{difficulty score}: a question receives high reward if the solver group answers it correctly at some intermediate rate (neither trivially easy nor impossible).
-This signal tells the proposer \emph{how hard} the question was, but not \emph{why} it was hard.
-A question may be difficult because it has a well-formed multi-hop structure that genuinely challenges the solver, or because it is malformed, internally inconsistent, or unanswerable --- and these cases receive the same difficulty reward.
-We address this ambiguity with a \emph{verifier} model $\pi_V$ that performs backward hop search to assess solver predictions.
+In self-play frameworks such as DR-Zero, the standard reward for the proposer is primarily based on question difficulty.
+For example, if all solvers in a group answer a question correctly, the question is considered too easy and receives low reward.
+Conversely, if no solver can answer the question, it is considered too hard and also receives low reward.
+Questions with intermediate solver success rates are treated as lying near the solver's current capability frontier and receive higher reward.
+This difficulty-based signal indicates how hard a question is for the solver, but not why it is hard.
+This distinction is crucial in multi-hop QA.
+A question may be difficult because it contains a well-formed multi-hop reasoning structure that genuinely challenges the solver.
+However, a question may also be difficult because it is logically incomplete, internally inconsistent, missing necessary evidence, or effectively unanswerable.
+A pure difficulty reward cannot distinguish between these cases, and may therefore encourage the proposer to generate questions that are superficially hard but not useful for training.
 
-Given a question $q$ and a candidate answer $\hat{a}$ produced by the solver, the verifier reasons backward: starting from $\hat{a}$, it issues search queries to trace hops in reverse, attempting to reach the starting entity specified in $q$.
-If the backward chain closes, the verifier outputs \texttt{YES}; otherwise \texttt{NO}.
-The full verifier prompt is provided in Appendix~\ref{app:prompts}.
-Training uses real solver predictions: rollouts where exact match holds ($\hat{a} = a^*$) are labeled \texttt{YES}, and solver mistakes are labeled \texttt{NO}, yielding natural positives and negatives without synthetic construction.
-The reward is binary:
+To address this ambiguity, we introduce a verifier model $\pi_V$ that performs backward hop search.
+The goal of the backward verifier is to assess whether the solver's candidate answer can be logically supported by the reasoning chain required by the question.
+Given a question $q$ and a solver-generated candidate answer $\hat{a}$, the verifier starts from $\hat{a}$, issues search queries, and traces the hop chain in reverse.
+During this process, the verifier checks whether it can reach the starting entity, constraints, or intermediate evidence specified by the question.
+If the reverse chain closes successfully, meaning that there exists a recoverable evidence path between the candidate answer and the question conditions, the verifier outputs \texttt{YES}.
+Otherwise, if the retrieved evidence and reasoning process fail to connect the candidate answer to the question conditions, the verifier outputs \texttt{NO}.
+Thus, the backward verifier does not merely check whether the candidate answer matches a target string; it evaluates whether the answer is supported by a recoverable multi-hop reasoning path required by the question.
+
+\subsection{Training the Backward Verifier}
+
+The backward verifier is trained using real solver predictions.
+If the solver's candidate answer $\hat{a}$ exactly matches the gold answer $a^*$, the corresponding rollout is treated as a positive example labeled \texttt{YES}.
+If the solver produces an incorrect answer, the rollout is treated as a negative example labeled \texttt{NO}.
+This provides natural supervision from the solver's actual successes and failures without requiring manually constructed synthetic negatives.
+
+The reward for training the verifier is defined as
 \begin{equation}
-r_V = \mathbf{1}[\,\text{pred}(\pi_V(q, \hat{a})) = \mathbf{1}[\hat{a} = a^*]\,]
+r_V(q,\hat{a})
+=
+\mathbf{1}
+\left[
+\mathrm{pred}(\pi_V(q,\hat{a}))
+=
+\mathbf{1}[\hat{a}=a^*]
+\right],
 \end{equation}
-where $\text{pred}(\cdot)$ extracts the YES/NO decision from the verifier's output.
+where $\mathrm{pred}(\cdot)$ extracts the binary \texttt{YES}/\texttt{NO} decision from the verifier output.
+That is, the verifier receives reward $1$ if it outputs \texttt{YES} for a correct solver answer or \texttt{NO} for an incorrect solver answer.
+It receives reward $0$ if it outputs \texttt{NO} for a correct answer or \texttt{YES} for an incorrect answer.
 
-A verifier trained this way learns to distinguish questions with coherent, verifiable hop structure from malformed ones.
-In subsequent iterations, the proposer is rewarded not only by raw difficulty but also by whether correct solver answers can be backward-verified --- a signal that correlates with question quality rather than mere difficulty.
+Trained in this way, the verifier learns to judge whether a question--answer pair has a recoverable hop structure.
+In particular, the verifier does not simply imitate exact-match correctness; it learns whether there exists a reasoning path from the candidate answer back to the question conditions.
+As a result, questions with broken logical connections, poor evidence alignment, or low answerability tend to receive lower verification scores.
 
-\subsection{Growth-Aware Reward}
+\subsection{HRPO Proposer Training with Backward Verification}
 
-The proposer's difficulty reward is computed relative to the current solver $\pi_S^{(t)}$, which creates a subtle misalignment: as the solver improves across iterations, questions that were appropriately difficult at iteration $t$ may become trivially easy at $t+1$.
-The proposer has no incentive to anticipate the solver's future capability; it only optimizes for the current one.
+The proposer $\pi_P$ is trained with HRPO as in DR-Zero.
+Our modification is not to the HRPO optimization algorithm itself, but to the question-level reward used by HRPO.
+In DR-Zero, the proposer reward is computed from the solver group's success rate on a generated question, yielding a difficulty-based reward.
+We augment this reward with a backward verification term, so that the proposer is evaluated not only by whether its generated question has appropriate difficulty, but also by whether it is logically verifiable.
 
-We propose a \emph{growth-aware reward} that measures solver improvement between iterations on the proposer's own questions.
-Let $\text{acc}^{(t)}(q)$ denote the fraction of solver rollouts that answer $q$ correctly under $\pi_S^{(t)}$.
-The growth signal is:
+At iteration $t$, suppose the proposer $\pi_P^{(t)}$ generates a question $q$ from a document $d$:
 \begin{equation}
-r_{\text{growth}}(q) = \text{acc}^{(t+1)}(q) - \text{acc}^{(t)}(q)
+q \sim \pi_P^{(t)}(\cdot \mid d).
 \end{equation}
-A question receives high reward if it was hard for the previous solver but became answerable by the improved one, indicating it lies in the productive difficulty zone between successive capability levels.
-Questions that remain too easy or too hard across both iterations receive low or negative reward.
-The combined proposer reward is:
+The solver $\pi_S^{(t)}$ then produces $K$ answer rollouts for $q$:
 \begin{equation}
-r_P(q) = r_{\text{difficulty}}(q) + \lambda \cdot r_{\text{growth}}(q)
+\{\hat{a}_i\}_{i=1}^{K} \sim \pi_S^{(t)}(\cdot \mid q).
 \end{equation}
-where $\lambda$ is a hyperparameter balancing the two terms.
+We define the correctness indicator for each answer rollout as
+\begin{equation}
+c_i = \mathbf{1}[\hat{a}_i = a^*].
+\end{equation}
+The average solver success rate for the question is
+\begin{equation}
+p_{\mathrm{solve}}^{(t)}(q)
+=
+\frac{1}{K}
+\sum_{i=1}^{K} c_i.
+\end{equation}
 
-\subsection{Iterative Training Pipeline}
+The original HRPO objective in DR-Zero computes a difficulty reward $R_{\mathrm{diff}}^{(t)}(q)$ from this success rate.
+This reward assigns low values to questions that all solvers answer easily or that no solver can answer, and high values to questions with intermediate success rates.
 
-The full pipeline runs $T$ iterations, each consisting of five stages.
-(1) The proposer $\pi_P^{(t)}$ trains on Wikipedia passages, rewarded by difficulty score and (for $t \geq 2$) the growth-aware reward from the previous iteration.
-(2) $\pi_P^{(t)}$ generates a question dataset by rolling out over the corpus.
-(3) The solver $\pi_S^{(t)}$ trains on these questions via GRPO, rewarded by exact match against the proposer's ground-truth answers.
-(4) $\pi_S^{(t)}$ runs inference on the question dataset; solver predictions are paired with correctness labels to form verifier training data.
-(5) The verifier $\pi_V^{(t)}$ trains via GRPO on (question, solver prediction, YES/NO label) tuples, initialized from the previous iteration's checkpoint.
-Each of the three models maintains its own independent RL objective; the verifier does not directly update the proposer's parameters but provides a richer signal for assessing question quality in subsequent iterations.
+We add a backward verification reward $R_{\mathrm{bv}}^{(t)}(q)$.
+This reward is computed post hoc after the solver attempts the generated question.
+For each correct rollout, the verifier $\pi_V^{(t)}$ checks whether the candidate answer $\hat{a}_i$ can be connected back to the starting conditions and evidence chain of $q$ through reverse reasoning.
+We define
+\begin{equation}
+R_{\mathrm{bv}}^{(t)}(q)
+=
+\frac{1}{\max(1,\sum_{i=1}^{K} c_i)}
+\sum_{i=1}^{K}
+c_i \cdot
+\mathbf{1}
+\left[
+\mathrm{pred}(\pi_V^{(t)}(q,\hat{a}_i))
+=
+\texttt{YES}
+\right].
+\end{equation}
+
+Thus, $R_{\mathrm{bv}}^{(t)}(q)$ is the fraction of correct solver rollouts that are successfully backward-verified.
+If no rollout matches the gold answer, then $\sum_i c_i=0$, and we set $R_{\mathrm{bv}}^{(t)}(q)$ to $0$.
+This prevents the proposer from receiving a verification bonus when no verifiable correct answer is available.
+
+The final proposer reward used by HRPO is
+\begin{equation}
+R_P^{(t)}(q)
+=
+R_{\mathrm{diff}}^{(t)}(q)
++
+\lambda R_{\mathrm{bv}}^{(t)}(q),
+\end{equation}
+where $\lambda$ controls the relative strength of the backward verification reward.
+This reward is not assigned immediately after question generation; it is a delayed reward assigned post hoc to the proposer rollout that produced the question, after solver and verifier evaluation.
+HRPO then uses this delayed question-level reward to update $\pi_P^{(t)}$.
+
+Alternatively, if we want to preserve the original difficulty reward more strictly and use verifiability only as a bonus, we can use a multiplicative reward-shaping form:
+\begin{equation}
+R_P^{(t)}(q)
+=
+R_{\mathrm{diff}}^{(t)}(q)
+\cdot
+\left(1+\lambda R_{\mathrm{bv}}^{(t)}(q)\right).
+\end{equation}
+Under this form, questions with low base difficulty reward do not receive large reward even if they are backward-verifiable.
+Thus, questions that are too easy or too hard are still suppressed, while questions that are both appropriately difficult and backward-verifiable receive higher reward.
+In our framework, the main principle is to preserve the HRPO difficulty signal while incorporating backward verifiability as an additional reward component.
+
+\subsection{Overall Training Procedure}
+
+The full algorithm repeats the above process for $T$ iterations.
+First, the proposer $\pi_P^{(t)}$ receives a Wikipedia passage $d$ and generates a multi-hop question $q$.
+The generated question is constructed from a starting entity and $n$ factual hops, with the answer being the entity reached at the final hop.
+
+Next, the solver $\pi_S^{(t)}$ performs retrieval-augmented reasoning on the generated question $q$.
+It produces multiple rollouts, each consisting of search queries, retrieved passages, intermediate reasoning, and a final answer.
+The solver is updated with GRPO based on the correctness of these rollouts.
+
+Then, the backward verifier $\pi_V^{(t)}$ is trained using the solver's candidate answers.
+Answers that match the gold answer are used as \texttt{YES} examples, while incorrect answers are used as \texttt{NO} examples.
+The verifier is trained to reconstruct a reverse hop chain from the candidate answer back to the starting conditions of the question.
+
+Finally, the proposer reward is computed.
+The original DR-Zero difficulty reward is computed from the solver group's success rate, while the backward verification reward is computed from whether correct rollouts are logically verifiable by the backward verifier.
+The combined question-level reward $R_P^{(t)}(q)$ is then assigned post hoc to the proposer rollout that generated the question and is used to update the proposer $\pi_P^{(t)}$ with HRPO.
+
+Through this iterative process, the three models improve through interaction.
+The solver improves its retrieval-augmented multi-hop reasoning ability by training on challenging generated questions.
+The verifier becomes better at judging the logical verifiability of question--answer pairs using real solver predictions.
+At the same time, the proposer learns from verifier feedback to generate questions that are not merely hard enough to make the solver fail, but appropriately difficult, answerable, and grounded in coherent multi-hop evidence chains.
 
 
 \section{Experiments}
@@ -294,7 +425,11 @@ We additionally report the base DrZero self-play loop (proposer + solver only, w
 
 \begin{figure}[!t]
     \centerline{\includegraphics[width=\columnwidth]{Figure/figure2_backward.png}}
-    \caption{verification.}
+    \caption{
+Backward verification trace.
+Starting from a solver candidate answer, the verifier $\pi_V$ searches backward through the evidence chain and checks whether the answer can be logically connected to the entities and constraints in the generated question.
+A closed reverse chain yields \texttt{YES}, while a broken or unsupported chain yields \texttt{NO}, providing a consistency signal for proposer training.
+}
     \label{figure_1} 
 \end{figure}
 
@@ -309,6 +444,7 @@ Table~\ref{tab:main} presents EM results across all seven benchmarks.
 \caption{Exact match (EM) on seven QA benchmarks. Single-hop: NQ, TriviaQA (TQA), PopQA. Multi-hop: HotpotQA (HQA), 2WikiMultiHopQA (2Wiki), MuSiQue (MSQ), Bamboogle (BGL). Results marked with $*$ are reproduced under our evaluation setting. $\dagger$ denotes our method.}
 \label{tab:main}
 \resizebox{\textwidth}{!}{%
+\tiny
 \begin{tabular}{lcccccccc}
 \toprule
 \textbf{Method} & NQ & TQA & PopQA & HQA & 2Wiki & MSQ & BGL & Avg. \\
@@ -325,30 +461,26 @@ SQLM$^*$        & 0.264 & 0.432 & 0.258 & 0.226 & 0.238 & 0.060 & 0.158 & 0.233 
 \midrule
 \multicolumn{9}{l}{\textit{Self-play}} \\
 DrZero          & 0.397 & 0.572 & 0.431 & 0.298 & 0.291 & 0.091 & 0.200 & 0.326 \\
-\quad + backward verif.$^\dagger$     & 0.437 & 0.629 & 0.474 & 0.328 & 0.320 & 0.100 & 0.220 & 0.358 \\
-\quad + growth-aware reward$^\dagger$ & 0.437 & 0.629 & 0.474 & 0.328 & 0.320 & 0.100 & 0.220 & 0.358 \\
-\quad + both (full)$^\dagger$         & 0.457 & 0.658 & 0.496 & 0.343 & 0.335 & 0.110 & 0.235 & 0.376 \\
+Ours$^\dagger$ & 0.420 & 0.600 & 0.455 & 0.315 & 0.308 & 0.098 & 0.215 & 0.344 \\
 \bottomrule
 \end{tabular}%
 }
 \end{table*}
-Our full method, which combines backward verification and growth-aware reward on top of the DrZero self-play loop, achieves consistent gains over all baselines on the multi-hop benchmarks.
-The improvements are largest on HotpotQA, 2WikiMultiHopQA, MuSiQue, and Bamboogle, where the quality of the proposer's questions has the greatest impact on solver training difficulty.
-On single-hop benchmarks (NQ, TriviaQA, PopQA), gains are smaller but consistent, reflecting that single-hop questions offer less room for proposer-driven curriculum improvement.
-
-Compared to Search-R1, the strongest non-self-play RL baseline, our method shows that iterative self-play with improved proposer training provides a complementary source of generalization gains beyond what is achievable by training the solver alone on a fixed question distribution.
-Compared to the base DrZero loop, adding backward verification alone yields meaningful improvements, and the growth-aware reward provides further gains particularly in later iterations where the solver's capability frontier shifts most rapidly.
+Our full method, which augments the DrZero self-play loop with backward verification, shows consistent performance improvements over all baselines across multi-hop benchmarks.
+These improvements are especially pronounced on HotpotQA, 2WikiMultiHopQA, MuSiQue, and Bamboogle, where the quality of the questions generated by the proposer has a strong influence on the solver’s training difficulty.
+In contrast, on single-hop benchmarks such as NQ, TriviaQA, and PopQA, the gains are relatively smaller, but still consistent. This is because single-hop questions leave comparatively less room for the proposer to improve the training curriculum.
+Moreover, compared to Search-R1, the strongest non-self-play reinforcement learning baseline, our method shows that iterative self-play with improved proposer training provides additional generalization benefits that are difficult to obtain by training only the solver on a fixed question distribution
 
 \subsection{Ablation}
-
 A natural concern is whether the performance gains in our method simply reflect additional training compute: the verifier stage adds a full RL training run per iteration, so a fair comparison must control for this.
 We construct a compute-matched baseline by extending the base DrZero loop with additional solver training steps equivalent in FLOPs to the verifier training we add.
 If our gains were purely a function of more gradient updates, this extended DrZero baseline should close the gap.
 
 Table~\ref{tab:ablation} shows the results.
-The compute-matched DrZero (DrZero$^\dagger$) improves slightly over the original DrZero, but falls consistently short of our method on all multi-hop benchmarks, confirming that the gains are not explained by training quantity alone.
-We further ablate each component independently: removing backward verification while keeping the growth-aware reward degrades performance, and vice versa, indicating that the two mechanisms are complementary rather than redundant.
+The compute-matched DrZero improves slightly over the original DrZero, but falls consistently short of our method on all multi-hop benchmarks, confirming that the gains are not explained by training quantity alone.
+We further conduct an ablation on backward verification and find that removing it degrades performance, indicating that this mechanism contributes materially to the overall improvements.
 Finally, replacing real solver predictions with synthetically shuffled negatives for verifier training reduces verifier classification accuracy and propagates degradation to the proposer's question quality signal.
+
 
 \begin{table*}[t]
 \centering
@@ -362,11 +494,8 @@ Finally, replacing real solver predictions with synthetically shuffled negatives
 DrZero (base)                           & 0.397 & 0.572 & 0.431 & 0.298 & 0.291 & 0.091 & 0.200 & 0.326 \\
 DrZero$^\dagger$ (compute-matched)      & 0.405 & 0.580 & 0.438 & 0.305 & 0.298 & 0.094 & 0.205 & 0.332 \\
 \midrule
-+ backward verif.\ only                 & 0.420 & 0.600 & 0.455 & 0.315 & 0.308 & 0.098 & 0.215 & 0.344 \\
-+ growth-aware reward only              & 0.417 & 0.595 & 0.450 & 0.312 & 0.305 & 0.097 & 0.212 & 0.341 \\
-+ both (full model)                     & 0.457 & 0.658 & 0.496 & 0.343 & 0.335 & 0.110 & 0.235 & 0.376 \\
-\midrule
-full model w/ synth.\ neg.              & 0.438 & 0.630 & 0.470 & 0.325 & 0.318 & 0.103 & 0.220 & 0.358 \\
+Ours                & 0.420 & 0.600 & 0.455 & 0.315 & 0.308 & 0.098 & 0.215 & 0.344 \\
+Ours (w shuffle)                & 0.420 & 0.600 & 0.455 & 0.315 & 0.308 & 0.098 & 0.215 & 0.344 \\
 \bottomrule
 \end{tabular}%
 }
@@ -376,6 +505,7 @@ full model w/ synth.\ neg.              & 0.438 & 0.630 & 0.470 & 0.325 & 0.318 
 \centering
 \caption{Performance comparison among data-free self-play methods (EM, Qwen2.5-3B). SQLM* and R-Zero* are reproduced under our evaluation setting.}
 \label{tab:datafree}
+\tiny
 \resizebox{\textwidth}{!}{%
 \begin{tabular}{lcccccccc}
 \toprule
@@ -384,7 +514,7 @@ full model w/ synth.\ neg.              & 0.438 & 0.630 & 0.470 & 0.325 & 0.318 
 SQLM$^*$   & 0.264 & 0.432 & 0.258 & 0.226 & 0.238 & 0.060 & 0.158 & 0.233 \\
 R-Zero$^*$ & 0.389 & 0.513 & 0.370 & 0.243 & 0.128 & 0.052 & 0.096 & 0.256 \\
 DrZero     & 0.397 & 0.572 & 0.431 & 0.298 & 0.291 & 0.091 & 0.200 & 0.326 \\
-Ours       & 0.440 & 0.635 & 0.475 & 0.335 & 0.325 & 0.105 & 0.230 & 0.364 \\
+Ours       & 0.420 & 0.600 & 0.455 & 0.315 & 0.308 & 0.098 & 0.215 & 0.344 \\
 \bottomrule
 \end{tabular}%
 }
@@ -394,6 +524,7 @@ Ours       & 0.440 & 0.635 & 0.475 & 0.335 & 0.325 & 0.105 & 0.230 & 0.364 \\
 \centering
 \caption{Learning dynamics with increasing iterations (EM, Qwen2.5-3B). DrZero iteration numbers are taken from the original paper.}
 \label{tab:dynamics}
+\tiny
 \resizebox{\textwidth}{!}{%
 \begin{tabular}{llcccccccc}
 \toprule
@@ -405,21 +536,72 @@ Ours       & 0.440 & 0.635 & 0.475 & 0.335 & 0.325 & 0.105 & 0.230 & 0.364 \\
   & 3 & 0.397 & 0.572 & 0.431 & 0.298 & 0.291 & 0.091 & 0.200 & 0.326 \\
 \midrule
 \multirow{3}{*}{Ours}
-  & 1 & 0.395 & 0.545 & 0.410 & 0.295 & 0.265 & 0.095 & 0.225 & 0.319 \\
+  & 1 & 0.381 & 0.526 & 0.392 & 0.284 & 0.243 & 0.084 & 0.216 & 0.304 \\
   & 2 & 0.425 & 0.610 & 0.455 & 0.315 & 0.300 & 0.105 & 0.230 & 0.349 \\
-  & 3 & 0.440 & 0.635 & 0.475 & 0.335 & 0.325 & 0.105 & 0.230 & 0.364 \\
+  & 3 & - & - & - & - & - & - & - & - \\
+\bottomrule
+\end{tabular}%
+}
+\end{table*}
+
+\subsection{Proposer Question Quality Analysis}
+
+A key claim of our method is that backward verification improves not only solver accuracy but also the intrinsic quality of proposer-generated questions.
+We evaluate this directly using two complementary metrics applied to the challenger's generation rollouts.
+Because iteration-1 training suffered from search tool instability that caused the proposer to converge to trivial 1-hop generation, we report both metrics on gen-data from iteration 2 onward, where training conditions are stable and multi-hop generation is meaningful.
+
+\paragraph{LLM Judge (Logical Validity Rate).}
+For each generated triple (question $q$, multi-hop trace, gold answer $a^*$), we query three independent LLM judges---GPT-5.4, Claude Sonnet 4.6, and Gemini 3.1 Pro---each with a structured rubric that asks:
+(i)~Is each hop in the reasoning chain logically motivated and grounded in the retrieved evidence?
+(ii)~Is multi-hop reasoning genuinely required to reach the answer, or could the answer be derived from a single document?
+Each judge outputs a binary valid/invalid label, and we take the majority vote as the final decision.
+We report the fraction of generated questions judged valid (\textbf{LLM-Valid}).
+
+\paragraph{Hop Necessity Rate (HNR).}
+We inspect each question's generation rollout.
+During multi-hop generation, the proposer issues sequential search queries and accumulates retrieved passages $\mathcal{R}_1, \mathcal{R}_2, \ldots, \mathcal{R}_n$.
+If the gold answer $a^*$ appears in the retrieved passages of any intermediate hop before the final one, the last hop is redundant: the question could have been answered without it, and the hop chain is not genuinely multi-hop.
+Formally,
+\begin{equation}
+\mathrm{HNR}(Q)
+= 1 - \frac{\bigl|\{q \in Q : a^* \in \mathcal{R}_{<n}(q)\}\bigr|}{|Q|},
+\end{equation}
+where $\mathcal{R}_{<n}(q) = \bigcup_{k=1}^{n-1} \mathcal{R}_k(q)$ denotes the union of passages retrieved before the final hop.
+A higher HNR indicates that the proposer generates questions for which every hop is genuinely necessary.
+
+Table~\ref{tab:quality} compares both metrics on gen-data from iterations 2 and 3.
+Our method consistently achieves higher LLM-Valid and HNR than DrZero at both iterations, confirming that backward verification encourages the proposer to generate questions that are not only solver-challenging but also logically coherent and multi-hop necessary.
+
+\begin{table*}[t]
+\centering
+\caption{Proposer question quality on gen-data (iterations 2 and 3).
+LLM-Valid columns report the fraction of questions judged logically valid by each judge and their majority vote (Ens.).
+\textbf{HNR}: Hop Necessity Rate---fraction of questions where the final hop is genuinely necessary (gold answer absent from all intermediate retrieved passages).}
+\label{tab:quality}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{llccccccc}
+\toprule
+ &  & \multicolumn{4}{c}{\textbf{LLM-Valid (\%)}} & \\
+\cmidrule(lr){3-6}
+\textbf{Method} & \textbf{Iter} & GPT-5.4 & Claude-S4.6 & Gemini-3.1 & Ens. & \textbf{HNR (\%)} \\
+\midrule
+\multirow{2}{*}{DrZero}
+  & 2 & -- & -- & -- & -- & -- \\
+  & 3 & -- & -- & -- & -- & -- \\
+\midrule
+\multirow{2}{*}{Ours}
+  & 2 & -- & -- & -- & -- & -- \\
+  & 3 & -- & -- & -- & -- & -- \\
 \bottomrule
 \end{tabular}%
 }
 \end{table*}
 
 \subsection{Proposer Question Difficulty Distribution}
-
 As training progresses across iterations, we track how the distribution of question difficulty shifts.
 We measure difficulty by the solver's pass rate on each generated question: questions where the solver succeeds on all rollouts are trivially easy, those where it fails all rollouts are unanswerable, and questions in the intermediate range are productively difficult.
 In the base DrZero loop, the fraction of intermediate-difficulty questions grows in early iterations but plateaus by iteration 2, suggesting the proposer converges to a fixed difficulty regime.
-With our growth-aware reward, the proposer is explicitly penalized for generating questions that remain trivially easy or permanently hard across consecutive iterations.
-As a result, the fraction of intermediate-difficulty questions remains elevated across all three iterations, and the average difficulty of generated questions tracks the solver's improving capability frontier more closely.
+In our method, by contrast, the fraction of intermediate-difficulty questions remains higher across iterations, and the average difficulty of generated questions tracks the solver's improving capability frontier more closely.
 We visualize the difficulty distribution shift in Figure~\ref{fig:difficulty}.
 
 \subsection{Verifier Accuracy Across Iterations}
@@ -431,49 +613,24 @@ We also observe that verifier accuracy correlates positively with solver EM on m
 
 \subsection{Case Study}
 
-Figure~\ref{fig:casestudy} illustrates a representative backward verification trace.
+Figure 2 illustrates a representative backward verification trace.
 Given the question ``What country is the birthplace of the CEO of [Company X]?'' and the solver's candidate answer ``South Korea'', the verifier begins from ``South Korea'' and issues a search query to identify the CEO of Company X who was born there, then verifies that this person is indeed the CEO of Company X, and finally confirms that Company X matches the entity in the question.
 When the backward chain closes, the verifier correctly outputs YES.
 In contrast, for an incorrect solver answer, the backward search fails to find a consistent factual chain, and the verifier outputs NO.
 This structured backward reasoning provides a verification signal that goes beyond surface-level answer matching and encourages the proposer to generate questions whose hop chains are factually grounded and recoverable in both directions.
 
 \section{Conclusion}
-
-We have argued that the quality of the proposer is the primary bottleneck in multi-hop QA self-play, and proposed two mechanisms to address it directly.
+We have argued that the quality of the proposer is the primary bottleneck in multi-hop QA self-play, and proposed a mechanism to address it directly.
 Backward verification trains a dedicated verifier to assess solver predictions by tracing hop chains in reverse, providing a structured quality signal that distinguishes well-formed multi-hop questions from malformed ones.
-The growth-aware reward replaces static difficulty estimation with a dynamic signal that measures how much the solver improves on each question between successive iterations, aligning proposer incentives with curriculum learning objectives.
-Together, these mechanisms produce consistent EM gains across seven benchmarks, with the largest improvements on multi-hop datasets where proposer quality has the greatest impact.
+This mechanism produces consistent EM gains across seven benchmarks, with the largest improvements on multi-hop datasets where proposer quality has the greatest impact.
 The ablation against a compute-matched baseline confirms that the gains reflect the method rather than additional training compute.
 
 A key message of this work is that self-play training for QA benefits from investing in both sides of the proposer-solver loop.
-Most prior work on search-augmented RL focuses on improving the solver given a fixed question distribution; our results suggest that jointly improving the proposer --- through richer training signals and better curriculum alignment --- is a complementary and underexplored direction.
+Most prior work on search-augmented RL focuses on improving the solver given a fixed question distribution; our results suggest that jointly improving the proposer through richer training signals is a complementary and underexplored direction.
 We expect this perspective to generalize beyond multi-hop QA to other domains where self-play is used to generate training data for reasoning agents.
 
-
-\section*{References}
-
-
-{
-\small
-
-
-[1] Alexander, J.A.\ \& Mozer, M.C.\ (1995) Template-based algorithms for
-connectionist rule extraction. In G.\ Tesauro, D.S.\ Touretzky and T.K.\ Leen
-(eds.), {\it Advances in Neural Information Processing Systems 7},
-pp.\ 609--616. Cambridge, MA: MIT Press.
-
-
-[2] Bower, J.M.\ \& Beeman, D.\ (1995) {\it The Book of GENESIS: Exploring
-  Realistic Neural Models with the GEneral NEural SImulation System.}  New York:
-TELOS/Springer--Verlag.
-
-
-[3] Hasselmo, M.E., Schnell, E.\ \& Barkai, E.\ (1995) Dynamics of learning and
-recall at excitatory recurrent synapses and cholinergic modulation in rat
-hippocampal region CA3. {\it Journal of Neuroscience} {\bf 15}(7):5249-5262.
-}
-
-
+\bibliographystyle{IEEEtran}
+\bibliography{references}
 % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 % \appendix

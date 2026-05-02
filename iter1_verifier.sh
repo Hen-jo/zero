@@ -20,8 +20,8 @@ if [ $# -ge 1 ]; then
     shift
 fi
 
-algorithm=grpo
-grpo_group_size=5
+algorithm=grpo_batch
+grpo_group_size=1
 model=/input/model/Qwen/Qwen2.5-3B-Instruct
 model_name=$(basename "$model" | tr '[:upper:]' '[:lower:]')
 

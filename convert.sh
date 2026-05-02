@@ -2,14 +2,20 @@ set -e
 
 iter=${1:-1}
 hop_ratio=${2:-4321}
+# Optional: pass full experiment name directly as 3rd arg
+exp_name=${3:-""}
 
-algorithm=grpo
-grpo_group_size=5
+algorithm=grpo_batch
+grpo_group_size=1
 model=/input/model/Qwen/Qwen2.5-3B-Instruct
 model_name=$(basename "$model" | tr '[:upper:]' '[:lower:]')
 
 OUTPUT_DIR=/input/output/zero_no2
-CKPT_BASE="$OUTPUT_DIR/checkpoints/dr-zero/verifier_iter${iter}_ratio${hop_ratio}_${algorithm}_group${grpo_group_size}_${model_name}"
+if [ -n "$exp_name" ]; then
+    CKPT_BASE="$OUTPUT_DIR/checkpoints/dr-zero/${exp_name}"
+else
+    CKPT_BASE="$OUTPUT_DIR/checkpoints/dr-zero/verifier_iter${iter}_ratio${hop_ratio}_${algorithm}_group${grpo_group_size}_${model_name}"
+fi
 TARGET_DIR="$CKPT_BASE/verifier_iter${iter}_hf"
 
 # 최신 global_step 자동 탐지

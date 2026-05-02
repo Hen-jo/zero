@@ -192,5 +192,5 @@ python -m verl.trainer.main_ppo \
 
 # ── [5/4] Verifier HF 포맷 변환 (iter2용) ────────────────────────────────
 echo "[$(date '+%H:%M:%S')] [5/4] Verifier 체크포인트 → HF 변환 중..."
-bash "$SCRIPT_DIR/convert.sh" 1 ${hop_ratio}
+bash "$SCRIPT_DIR/convert.sh" 1 ${hop_ratio} ${VERIFIER_NAME}
 echo "[$(date '+%H:%M:%S')] [5/4] 변환 완료"

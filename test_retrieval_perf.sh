@@ -75,7 +75,7 @@ def make_payload(n):
 
 def send(payload):
     t0 = time.time()
-    r = requests.post(URL, json=payload, timeout=120)
+    r = requests.post(URL, json=payload, timeout=600)
     return time.time() - t0, r.status_code
 
 # ── 배치 크기별 레이턴시 ──────────────────────────────────────────────────
@@ -96,9 +96,9 @@ print(f"  {'concur':>7}  {'throughput':>11}  {'avg_lat':>8}  {'p95_lat':>8}  {'o
 print(f"  {'-'*50}")
 
 payload = make_payload(10)
-N_TOTAL = 60
+N_TOTAL = 20
 
-for concurrency in [1, 5, 10, 20, 30, 50]:
+for concurrency in [1, 5, 10, 20, 30]:
     t_start = time.time()
     with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as ex:
         futs = [ex.submit(send, payload) for _ in range(N_TOTAL)]

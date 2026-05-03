@@ -4,6 +4,7 @@
 import json
 import logging
 import os
+import sys
 import threading
 import time
 import traceback
@@ -440,5 +441,8 @@ if __name__ == "__main__":
     os.environ["RS_MODEL_PATH"]     = args.retriever_model
     os.environ["RS_FAISS_GPU"]      = "1" if args.faiss_gpu else "0"
 
+    # workers > 1이면 import string 필요 (uvicorn 제약)
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    app_import = "retrieval_server:app" if args.workers > 1 else app
     print(f"[retrieval_server] uvicorn 시작 (workers={args.workers})...", flush=True)
-    uvicorn.run(app, host="0.0.0.0", port=8000, access_log=False, workers=args.workers)
+    uvicorn.run(app_import, host="0.0.0.0", port=8000, access_log=False, workers=args.workers)

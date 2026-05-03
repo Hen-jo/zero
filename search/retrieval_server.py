@@ -3,8 +3,6 @@
 
 import json
 import logging
-import os
-import sys
 import threading
 import time
 import traceback
@@ -362,32 +360,6 @@ app = FastAPI()
 retriever = None
 config = None
 
-@app.on_event("startup")
-def startup():
-    global retriever, config
-    # 각 워커 프로세스가 시작될 때 env var에서 config를 읽어 독립적으로 초기화
-    index_path    = os.environ["RS_INDEX_PATH"]
-    corpus_path   = os.environ["RS_CORPUS_PATH"]
-    topk          = int(os.environ.get("RS_TOPK", "3"))
-    retriever_name= os.environ.get("RS_RETRIEVER_NAME", "e5")
-    model_path    = os.environ["RS_MODEL_PATH"]
-    faiss_gpu     = os.environ.get("RS_FAISS_GPU", "0") == "1"
-    config = Config(
-        retrieval_method=retriever_name,
-        index_path=index_path,
-        corpus_path=corpus_path,
-        retrieval_topk=topk,
-        faiss_gpu=faiss_gpu,
-        retrieval_model_path=model_path,
-        retrieval_pooling_method="mean",
-        retrieval_query_max_length=256,
-        retrieval_use_fp16=True,
-        retrieval_batch_size=512,
-    )
-    print(f"[startup pid={os.getpid()}] retriever 초기화 시작...", flush=True)
-    retriever = get_retriever(config)
-    print(f"[startup pid={os.getpid()}] retriever 초기화 완료", flush=True)
-
 @app.post("/retrieve")
 def retrieve_endpoint(request: QueryRequest):
     topk = request.topk if request.topk else config.retrieval_topk
@@ -429,34 +401,22 @@ if __name__ == "__main__":
     parser.add_argument("--retriever_name", type=str, default="e5", help="Name of the retriever model.")
     parser.add_argument("--retriever_model", type=str, default="intfloat/e5-base-v2", help="Path of the retriever model.")
     parser.add_argument('--faiss_gpu', action='store_true', help='Use GPU for computation')
-    parser.add_argument('--workers', type=int, default=1, help='Number of uvicorn worker processes (each loads index independently)')
 
     args = parser.parse_args()
 
-    # env var로 config 전달 (각 uvicorn 워커의 startup event에서 읽음)
-    os.environ["RS_INDEX_PATH"]     = args.index_path
-    os.environ["RS_CORPUS_PATH"]    = args.corpus_path
-    os.environ["RS_TOPK"]           = str(args.topk)
-    os.environ["RS_RETRIEVER_NAME"] = args.retriever_name
-    os.environ["RS_MODEL_PATH"]     = args.retriever_model
-    os.environ["RS_FAISS_GPU"]      = "1" if args.faiss_gpu else "0"
+    config = Config(
+        retrieval_method=args.retriever_name,
+        index_path=args.index_path,
+        corpus_path=args.corpus_path,
+        retrieval_topk=args.topk,
+        faiss_gpu=args.faiss_gpu,
+        retrieval_model_path=args.retriever_model,
+        retrieval_pooling_method="mean",
+        retrieval_query_max_length=256,
+        retrieval_use_fp16=True,
+        retrieval_batch_size=512,
+    )
+    retriever = get_retriever(config)
 
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    print(f"[retrieval_server] uvicorn 시작 (workers={args.workers})...", flush=True)
-
-    if args.workers > 1:
-        # uvicorn.run()은 programmatic workers 미지원 버전에서 경고 후 종료됨
-        # → uvicorn CLI를 execvpe로 직접 실행 (env vars 상속)
-        env = dict(os.environ)
-        pythonpath = env.get('PYTHONPATH', '')
-        env['PYTHONPATH'] = script_dir + (':' + pythonpath if pythonpath else '')
-        os.execvpe(
-            sys.executable,
-            [sys.executable, '-m', 'uvicorn', 'retrieval_server:app',
-             '--host', '0.0.0.0', '--port', '8000',
-             '--workers', str(args.workers), '--no-access-log'],
-            env,
-        )
-        # execvpe는 리턴하지 않음
-    else:
-        uvicorn.run(app, host="0.0.0.0", port=8000, access_log=False)
+    print(f"[retrieval_server] uvicorn 시작...", flush=True)
+    uvicorn.run(app, host="0.0.0.0", port=8000, access_log=False)

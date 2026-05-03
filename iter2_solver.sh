@@ -80,8 +80,7 @@ python -m verl.trainer.main_ppo \
     data.train_batch_size=128 \
     data.val_batch_size=64 \
     data.max_prompt_length=512 \
-    algorithm.use_kl_in_reward=True \
-    algorithm.kl_ctrl.kl_coef=0.001 \
+    algorithm.use_kl_in_reward=False \
     algorithm.adv_estimator=${algorithm} \
     actor_rollout_ref.model.path=$RESUME_PATH \
     actor_rollout_ref.actor.grad_clip=0.1 \

@@ -441,8 +441,22 @@ if __name__ == "__main__":
     os.environ["RS_MODEL_PATH"]     = args.retriever_model
     os.environ["RS_FAISS_GPU"]      = "1" if args.faiss_gpu else "0"
 
-    # workers > 1이면 import string 필요 (uvicorn 제약)
-    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    app_import = "retrieval_server:app" if args.workers > 1 else app
+    script_dir = os.path.dirname(os.path.abspath(__file__))
     print(f"[retrieval_server] uvicorn 시작 (workers={args.workers})...", flush=True)
-    uvicorn.run(app_import, host="0.0.0.0", port=8000, access_log=False, workers=args.workers)
+
+    if args.workers > 1:
+        # uvicorn.run()은 programmatic workers 미지원 버전에서 경고 후 종료됨
+        # → uvicorn CLI를 execvpe로 직접 실행 (env vars 상속)
+        env = dict(os.environ)
+        pythonpath = env.get('PYTHONPATH', '')
+        env['PYTHONPATH'] = script_dir + (':' + pythonpath if pythonpath else '')
+        os.execvpe(
+            sys.executable,
+            [sys.executable, '-m', 'uvicorn', 'retrieval_server:app',
+             '--host', '0.0.0.0', '--port', '8000',
+             '--workers', str(args.workers), '--no-access-log'],
+            env,
+        )
+        # execvpe는 리턴하지 않음
+    else:
+        uvicorn.run(app, host="0.0.0.0", port=8000, access_log=False)

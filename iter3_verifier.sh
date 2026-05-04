@@ -31,18 +31,24 @@ model_name=$(basename "$model" | tr '[:upper:]' '[:lower:]')
 challenger_algorithm=grpo_batch
 challenger_grpo_group_size=1
 challenger_reward_group_size=5
+challenger_step=30
 
 solver_algorithm=grpo
 solver_grpo_group_size=5
+solver_step=30
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUTPUT_DIR=/input/output/zero_no2
+EXP_DIR="$OUTPUT_DIR/checkpoints/dr-zero"
 CONFIG_PATH="$SCRIPT_DIR/config"
 TOOL_CONFIG="$CONFIG_PATH/search_tool_config.yaml"
 
 CHALLENGER_NAME="challenger_iter${cur_iter}_ratio${hop_ratio}_${challenger_algorithm}_group${challenger_grpo_group_size}-${challenger_reward_group_size}_${model_name}"
 SOLVER_NAME="solver_iter${cur_iter}_ratio${hop_ratio}_${solver_algorithm}_group${solver_grpo_group_size}_${model_name}"
 VERIFIER_NAME="verifier_iter${cur_iter}_ratio${hop_ratio}_${algorithm}_group${grpo_group_size}_${model_name}"
+
+CHALLENGER_CKPT="${EXP_DIR}/${CHALLENGER_NAME}/challenger_hf"
+SOLVER_CKPT="${EXP_DIR}/${SOLVER_NAME}/solver_hf"
 
 TRAIN_DATA="$OUTPUT_DIR/data/verifier_${CHALLENGER_NAME}/train.parquet"
 VAL_DATA="/input/data/Drzero/test.parquet"
@@ -59,14 +65,37 @@ GEN_DATA_PATH="$OUTPUT_DIR/data/zero_${CHALLENGER_NAME}.parquet"
 SOLVER_PRED_PATH="$OUTPUT_DIR/data/solver_pred_${SOLVER_NAME}.parquet"
 VERIFIER_DATA_DIR="$OUTPUT_DIR/data/verifier_${CHALLENGER_NAME}"
 
-echo "[$(date '+%H:%M:%S')] [0/3] Verifier 학습 데이터 생성 중..."
+# ── [0/4] Challenger / Solver 체크포인트 변환 ─────────────────────────────
+if [ ! -d "$CHALLENGER_CKPT" ]; then
+    echo "[$(date '+%H:%M:%S')] [0/4] Challenger 체크포인트 변환 중..."
+    python -m verl.model_merger merge \
+        --backend fsdp \
+        --local_dir "${EXP_DIR}/${CHALLENGER_NAME}/global_step_${challenger_step}/actor" \
+        --target_dir "$CHALLENGER_CKPT"
+    echo "[$(date '+%H:%M:%S')] [0/4] Challenger 변환 완료: $CHALLENGER_CKPT"
+else
+    echo "[$(date '+%H:%M:%S')] [0/4] Challenger 이미 변환됨, 건너뜀: $CHALLENGER_CKPT"
+fi
+
+if [ ! -d "$SOLVER_CKPT" ]; then
+    echo "[$(date '+%H:%M:%S')] [0/4] Solver 체크포인트 변환 중..."
+    python -m verl.model_merger merge \
+        --backend fsdp \
+        --local_dir "${EXP_DIR}/${SOLVER_NAME}/global_step_${solver_step}/actor" \
+        --target_dir "$SOLVER_CKPT"
+    echo "[$(date '+%H:%M:%S')] [0/4] Solver 변환 완료: $SOLVER_CKPT"
+else
+    echo "[$(date '+%H:%M:%S')] [0/4] Solver 이미 변환됨, 건너뜀: $SOLVER_CKPT"
+fi
+
+echo "[$(date '+%H:%M:%S')] [1/4] Verifier 학습 데이터 생성 중..."
 python "$SCRIPT_DIR/scripts/data_process/verifier_data.py" \
     --gen_data_path="$GEN_DATA_PATH" \
     --solver_pred_path="$SOLVER_PRED_PATH" \
     --local_dir="$VERIFIER_DATA_DIR"
-echo "[$(date '+%H:%M:%S')] [0/3] Verifier 데이터 생성 완료"
+echo "[$(date '+%H:%M:%S')] [1/4] Verifier 데이터 생성 완료"
 
-echo "[$(date '+%H:%M:%S')] [1/3] retrieval server 시작..."
+echo "[$(date '+%H:%M:%S')] [2/4] retrieval server 시작..."
 PYTHONUNBUFFERED=1 python $SCRIPT_DIR/search/retrieval_server.py \
     --index_path='/input/data/Drzero/corpus/e5_Flat.index' \
     --corpus_path='/input/data/Drzero/corpus/wiki-18.jsonl' \
@@ -92,7 +121,7 @@ wait_for_port() {
 
 wait_for_port 8000 $RETRIEVAL_PID $LOG_DIR/retrieval_server.log
 
-echo "[$(date '+%H:%M:%S')] [2/3] sglang 시작..."
+echo "[$(date '+%H:%M:%S')] [3/4] sglang 시작..."
 python -m sglang.launch_server \
     --model=${model} \
     --port=8001 \
@@ -105,7 +134,7 @@ SGLANG_PID=$!
 
 wait_for_port 8001 $SGLANG_PID $LOG_DIR/sglang_server.log
 
-echo "[$(date '+%H:%M:%S')] [3/3] Verifier 학습 시작: ${VERIFIER_NAME}"
+echo "[$(date '+%H:%M:%S')] [4/4] Verifier 학습 시작: ${VERIFIER_NAME}"
 python -m verl.trainer.main_ppo \
     --config-path="$CONFIG_PATH" \
     --config-name='search_multiturn_grpo' \
@@ -146,3 +175,8 @@ python -m verl.trainer.main_ppo \
     trainer.val_before_train=False \
     trainer.total_training_steps=30 \
     trainer.total_epochs=1 $@
+
+# ── [5/4] Verifier HF 포맷 변환 ──────────────────────────────────────────
+echo "[$(date '+%H:%M:%S')] [5/4] Verifier 체크포인트 → HF 변환 중..."
+bash "$SCRIPT_DIR/convert.sh" ${cur_iter} ${hop_ratio} ${VERIFIER_NAME}
+echo "[$(date '+%H:%M:%S')] [5/4] 변환 완료"

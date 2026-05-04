@@ -113,5 +113,5 @@ python -m verl.trainer.main_ppo \
     trainer.val_before_train=False \
     trainer.validation_data_dir=${VAL_DATA_DIR} \
     trainer.total_epochs=1 \
-    trainer.total_training_steps=50 \
+    trainer.total_training_steps=30 \
     +trainer.save_last_rollout_path="$SOLVER_PRED_OUT" $@

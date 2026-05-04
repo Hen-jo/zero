@@ -114,5 +114,5 @@ python -m verl.trainer.main_ppo \
     trainer.rollout_data_dir=${VAL_DATA_DIR}/train_rollouts \
     trainer.rollout_log_freq=25 \
     trainer.total_epochs=1 \
-    trainer.total_training_steps=50 \
+    trainer.total_training_steps=30 \
     +trainer.save_last_rollout_path="$SOLVER_PRED_OUT" $@

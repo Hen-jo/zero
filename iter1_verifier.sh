@@ -188,7 +188,7 @@ python -m verl.trainer.main_ppo \
     trainer.test_freq=-1 \
     trainer.val_before_train=False \
     trainer.total_epochs=1 \
-    trainer.total_training_steps=25 $@
+    trainer.total_training_steps=30 $@
 
 # ── [5/4] Verifier HF 포맷 변환 (iter2용) ────────────────────────────────
 echo "[$(date '+%H:%M:%S')] [5/4] Verifier 체크포인트 → HF 변환 중..."

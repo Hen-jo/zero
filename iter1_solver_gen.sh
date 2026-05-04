@@ -30,7 +30,7 @@ solver_grpo_group_size=5
 model=/input/model/Qwen/Qwen2.5-3B-Instruct
 model_name=$(basename "$model" | tr '[:upper:]' '[:lower:]')
 
-solver_step=50
+solver_step=30
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUTPUT_DIR=/input/output/zero_no2

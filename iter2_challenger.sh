@@ -46,7 +46,7 @@ VAL_DATA="/input/data/Drzero/test.parquet"
 SOLVER_NAME="solver_hf"
 CHALLENGER_NAME="challenger_iter${cur_iter}_ratio${hop_ratio}_${algorithm}_group${grpo_group_size}-${reward_group_size}_${model_name}"
 SOLVER_PATH="$OUTPUT_DIR/checkpoints/dr-zero/solver_iter${prev_iter}_ratio${hop_ratio}_${solver_algorithm}_group${solver_grpo_group_size}_${model_name}/${SOLVER_NAME}"
-RESUME_PATH="$OUTPUT_DIR/checkpoints/dr-zero/challenger_iter${prev_iter}_ratio${hop_ratio}_${algorithm}_group${grpo_group_size}-${reward_group_size}_${model_name}/global_step_50"
+RESUME_PATH="$OUTPUT_DIR/checkpoints/dr-zero/challenger_iter${prev_iter}_ratio${hop_ratio}_${algorithm}_group${grpo_group_size}-${reward_group_size}_${model_name}/global_step_33"
 
 
 export TENSORBOARD_DIR=$OUTPUT_DIR/tensorboard

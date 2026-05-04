@@ -25,7 +25,7 @@ reward_group_size=5
 model=/input/model/Qwen/Qwen2.5-3B-Instruct
 model_name=$(basename "$model" | tr '[:upper:]' '[:lower:]')
 
-challenger_step=50
+challenger_step=33
 data_partition=1
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

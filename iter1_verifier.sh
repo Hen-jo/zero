@@ -29,10 +29,10 @@ model_name=$(basename "$model" | tr '[:upper:]' '[:lower:]')
 challenger_algorithm=grpo_batch
 challenger_grpo_group_size=1
 challenger_reward_group_size=5
-challenger_step=50
+challenger_step=33
 
 # Solver iter1 checkpoint (for generating verifier training data)
-solver_step=50
+solver_step=30
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUTPUT_DIR=/input/output/zero_no2

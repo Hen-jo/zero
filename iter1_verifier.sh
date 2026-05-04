@@ -35,7 +35,7 @@ challenger_step=50
 solver_step=50
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-OUTPUT_DIR=/input/output/zero_no2
+OUTPUT_DIR=/input/output/original
 EXP_DIR="$OUTPUT_DIR/checkpoints/dr-zero"
 CONFIG_PATH="$SCRIPT_DIR/config"
 TOOL_CONFIG="$CONFIG_PATH/search_tool_config.yaml"

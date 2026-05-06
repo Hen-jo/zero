@@ -76,8 +76,10 @@ wait_for_port() {
 }
 
 # ── [0/4] Challenger / Solver 체크포인트 변환 ─────────────────────────────
-if [ ! -d "$CHALLENGER_CKPT" ]; then
+# Check config.json as completion sentinel (empty dir = incomplete conversion)
+if [ ! -f "$CHALLENGER_CKPT/config.json" ]; then
     echo "[$(date '+%H:%M:%S')] [0/4] Challenger 체크포인트 변환 중..."
+    rm -rf "$CHALLENGER_CKPT"
     python -m verl.model_merger merge \
         --backend fsdp \
         --local_dir "${EXP_DIR}/${CHALLENGER_NAME}/global_step_${challenger_step}/actor" \

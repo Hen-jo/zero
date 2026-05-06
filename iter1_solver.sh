@@ -22,6 +22,7 @@ fi
 
 algorithm=grpo
 grpo_group_size=5
+solver_total_steps=30
 model=/input/model/Qwen/Qwen2.5-3B-Instruct
 model_name=$(basename "$model" | tr '[:upper:]' '[:lower:]')
 
@@ -114,5 +115,20 @@ python -m verl.trainer.main_ppo \
     trainer.rollout_data_dir=${VAL_DATA_DIR}/train_rollouts \
     trainer.rollout_log_freq=25 \
     trainer.total_epochs=1 \
-    trainer.total_training_steps=30 \
+    trainer.total_training_steps=${solver_total_steps} \
     +trainer.save_last_rollout_path="$SOLVER_PRED_OUT" $@
+
+# ── Solver HF 포맷 변환 (iter2_challenger용) ─────────────────────────────
+SOLVER_CKPT="${OUTPUT_DIR}/checkpoints/dr-zero/${SOLVER_NAME}/global_step_${solver_total_steps}"
+SOLVER_HF_CKPT="${OUTPUT_DIR}/checkpoints/dr-zero/${SOLVER_NAME}/solver_hf"
+if [ ! -f "$SOLVER_HF_CKPT/config.json" ]; then
+    echo "[$(date '+%H:%M:%S')] Solver 체크포인트 → HF 변환 중..."
+    rm -rf "$SOLVER_HF_CKPT"
+    python -m verl.model_merger merge \
+        --backend fsdp \
+        --local_dir "${SOLVER_CKPT}/actor" \
+        --target_dir "$SOLVER_HF_CKPT"
+    echo "[$(date '+%H:%M:%S')] Solver HF 변환 완료: $SOLVER_HF_CKPT"
+else
+    echo "[$(date '+%H:%M:%S')] Solver HF 이미 존재, 건너뜀: $SOLVER_HF_CKPT"
+fi

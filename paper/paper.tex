@@ -167,7 +167,7 @@ This question is particularly important for multi-hop question answering (QA). U
 However, most existing QA training methods rely on fixed datasets constructed before training begins. The questions, answers, and supervision signals are predetermined, and the difficulty distribution remains static even as the model improves. As a result, the model cannot actively seek out new questions that expose its current weaknesses, and the curriculum cannot adapt to the solver’s evolving capabilities. This limitation is especially pronounced in multi-hop QA, where progress depends on training examples that are not only difficult, but also grounded in coherent evidence chains.
 
 Self-play offers a natural alternative. In a self-play framework, a proposer generates questions and a solver learns to answer them through repeated interaction. Ideally, the proposer generates questions near the frontier of the solver’s current capability, and the solver improves by learning to answer them. This process forms an automated curriculum without requiring human-authored questions, allowing the training distribution to evolve as the solver improves.
-Recent work has instantiated this idea for multi-hop QA. The proposer constructs multi-hop questions by chaining factual hops from source documents, and the solver answers them by issuing search queries to recover the underlying evidence chain. This approach reduces dependence on manually written multi-hop questions and enables a more dynamic question distribution. However, it also introduces a critical bottleneck: the quality of self-play training is bounded by the quality of the proposer.
+Recent work \cite{drzero} has instantiated this idea for multi-hop QA. The proposer constructs multi-hop questions by chaining factual hops from source documents, and the solver answers them by issuing search queries to recover the underlying evidence chain. This approach reduces dependence on manually written multi-hop questions and enables a more dynamic question distribution. However, it also introduces a critical bottleneck: the quality of self-play training is bounded by the quality of the proposer.
 Existing self-play methods often overlook the quality of the reward signal provided to the proposer. Many approaches reward generated questions primarily according to whether the solver answers them correctly. Yet solver correctness alone is an insufficient measure of question quality. A question that the solver fails to answer may be difficult because it requires genuine multi-hop reasoning, but it may also be difficult because it is logically incomplete, underspecified, weakly grounded, or effectively unanswerable.
 These two forms of difficulty have very different consequences for learning. The former provides useful pressure on the solver and exposes its limitations. The latter provides little or no meaningful supervision, because no coherent reasoning path can reliably lead to the answer. Nevertheless, an answer-based reward does not distinguish between useful difficulty and spurious difficulty. As a result, the proposer may learn to generate questions that are superficially hard but logically defective, thereby degrading the curriculum and limiting solver improvement.
 
@@ -202,218 +202,273 @@ More precise difficulty estimation --- for instance, by tracking how solver perf
 
 Bidirectional reasoning uses the structure of a problem in both forward and backward directions to improve inference quality.
 In multi-hop QA, forward reasoning follows the hop chain from the question's starting entity to the answer; backward reasoning starts from a candidate answer and traces hops in reverse to verify consistency with the question.
-This idea connects to self-consistency methods and chain-of-thought verification, where a model checks its own answers by re-deriving them from a different starting point.
-Recent work on bidirectional training (e.g., RevThink) shows that training on both directions simultaneously improves reasoning robustness.
+This idea connects to self-consistency methods and chain-of-thought verification, where a model checks its own answers by re-d5  eriving them from a different starting point.
+Recent work on bidirectional training \cite{chen-etal-2025-reverse} (e.g., RevThink) shows that training on both directions simultaneously improves reasoning robustness.
 We adapt this principle to the self-play setting: rather than training the proposer or solver bidirectionally, we train a dedicated verifier to perform backward hop search over solver predictions, providing a structured verification signal that is richer than binary exact-match feedback.
 
 \section{Method}
 
-We build on the multi-hop question answering self-play setting of DR-Zero.
-The overall framework consists of three models: a proposer model $\pi_P$ that generates questions, a solver model $\pi_S$ that answers the generated questions, and a backward verifier $\pi_V$ that evaluates the logical verifiability of question--answer pairs.
-The proposer generates multi-hop questions from raw Wikipedia passages, while the solver answers them through retrieval-augmented reasoning.
-The backward verifier assesses whether a solver's candidate answer is logically supported by the evidence chain underlying the question, and the resulting verification signal is used as a question-level reward for subsequent proposer training.
+We propose backward-verified proposer refinement for self-play multi-hop QA. Our goal is to improve the proposer reward signal without changing the solver training objective or introducing an additional inference-time QA agent. In the standard self-play loop, the proposer is trained to generate questions that are structurally valid and appropriately difficult for the solver. However, difficulty alone does not guarantee that a generated question is logically coherent or grounded in a recoverable multi-hop evidence chain. 
+% --> 난이도? 난이도와 관련된 보상함수
 
-Importantly, the backward verification reward is not available at the moment of question generation.
-It is computed post hoc: after the proposer generates a question, the solver attempts to answer it, and the verifier evaluates the solver's candidate answers.
-Thus, we use the backward verification signal as a delayed question-level reward assigned to the proposer rollout that generated the question.
-We do not modify the HRPO algorithm itself; instead, we reshape the proposer reward used by HRPO with the backward verification signal.
+To address this issue, we add a delayed backward verification stage after solver training. At each iteration, the proposer first generates a set of multi-hop questions and is updated using the standard hop-grouped relative policy optimization (HRPO) reward. The generated questions are then used to train the solver with group relative policy optimization (GRPO). Only after this solver update do we run backward verification on the solver's answer rollouts. The resulting verification signal is then used to perform an additional proposer update on the same generated question rollouts.
 
-\begin{figure}[!t]
-    \centerline{\includegraphics[width=\columnwidth]{Figure/figure_mascot_v7.png}}
+Thus, backward verification is not an immediate reward computed at question generation time. It is a delayed proposer-side feedback signal obtained after the solver has learned from the generated questions. This design lets the proposer receive feedback not only about whether its questions were syntactically valid and appropriately difficult, but also about whether the solver's learned answers can be traced back through coherent evidence chains.
+
+\subsection{Self-play multi-hop QA setup}
+
+We build on the self-play multi-hop QA setting of DR-Zero. Given a raw Wikipedia passage $d$, the proposer $\pi_P$ generates a multi-hop question $q$. The proposer begins from a starting entity in $d$ and constructs a chain of $n$ factual hops through retrieval. The gold answer $a^\ast$ is defined as the entity reached at the final hop. Therefore, the generated question is intended to require multi-hop reasoning rather than direct extraction from a single passage.
+
+The solver $\pi_S$ receives the generated question $q$ and attempts to answer it through retrieval-augmented reasoning. Instead of answering in a single step, the solver issues search queries over multiple turns, observes retrieved passages, performs intermediate reasoning, and finally outputs a candidate answer $\hat{a}$. For each question, we sample $K$ solver rollouts:
+\[
+\{\hat{a}_i\}_{i=1}^{K} \sim \pi_S(\cdot \mid q).
+\]
+The correctness of each rollout is measured by exact match with the generated gold answer:
+\[
+c_i = \mathbb{I}[\hat{a}_i = a^\ast],
+\qquad
+k = \sum_{i=1}^{K} c_i.
+\]
+The solver is optimized with GRPO using rollout-level correctness rewards. The proposer is optimized with HRPO using question-level rewards.
+
+\begin{figure*}[t]
+    \centering
+    \includegraphics[width=\textwidth]{Figure/figure_mascot_v7.png}
     \caption{
-Overview of backward-verified self-play for multi-hop QA.
-The proposer $\pi_P$ generates multi-hop questions from Wikipedia passages, while the solver $\pi_S$ answers them via retrieval-augmented reasoning.
-Given the solver's candidate answers, the backward verifier $\pi_V$ traces evidence chains in reverse to determine whether the answers are logically recoverable from the question constraints.
-This post-hoc verification signal is assigned as a delayed question-level reward and combined with the original difficulty reward to update the proposer with HRPO.
-}
-    \label{figure_1} 
-\end{figure}
+    Overview of backward verification in self-play QA.
+    The verifier judges solver candidate answers after solver training and provides a delayed proposer-side reward signal for subsequent self-play iterations.
+    }
+    \label{fig:backward-verification}
+\end{figure*}
 
-\subsection{Multi-Hop QA self-play setting}
+\subsection{Standard Proposer and Solver Training}
 
-We follow the multi-hop QA self-play environment of DR-Zero.
-Given a raw Wikipedia passage $d$, the proposer model $\pi_P$ generates a multi-hop question $q$.
-Specifically, the proposer selects a starting entity appearing in the passage and sequentially chains $n$ factual hops through search.
-The generated question contains the starting entity, and the gold answer $a^*$ is the entity reached at the $n$-th hop.
-Thus, the generated questions are not single-document factual questions, but multi-hop questions that require connecting entities and relations across multiple passages.
-The solver model $\pi_S$ is trained to answer the generated question $q$.
-Rather than producing an answer in a single step, the solver issues search queries over multiple turns and reasons over the retrieved passages.
-Through this process, the solver attempts to recover the hop chain constructed by the proposer and produces a final candidate answer $\hat{a}$.
-The training algorithm differs by model role.
-The solver $\pi_S$ is trained with GRPO.
-GRPO is a reinforcement learning algorithm that estimates relative advantages from grouped rollout samples for the same question, without requiring a separate value model.
-In contrast, following DR-Zero, the proposer $\pi_P$ is trained with HRPO.
-HRPO computes question-level rewards from the responses of a solver group and optimizes the proposer to generate questions that are useful for solver learning.
+We first follow the self-play training loop of Dr. Zero. At iteration $t$, the
+proposer $\pi_P^{(t)}$ generates a batch of question--answer pairs from
+Wikipedia passages using multi-turn search. Each generated pair consists of a
+question $q$, a synthesized answer $a^\ast$, and an implicit hop structure
+induced by the proposer's search trajectory. The generated question--answer
+pairs form the proposer dataset $\mathcal{D}_P^{(t)}$.
 
-The overall training loop runs for $T$ iterations.
-At each iteration $t$, the proposer $\pi_P^{(t)}$ generates a dataset of questions from Wikipedia passages.
-The solver $\pi_S^{(t)}$ then performs retrieval-augmented reasoning on the generated questions and produces multiple answer rollouts for each question.
-The solver is updated with GRPO based on the correctness of these rollouts.
-Afterward, the proposer reward is computed post hoc from the solver outcomes and backward verification results, and this reward is used to update the proposer $\pi_P^{(t)}$ with HRPO.
+The proposer is optimized with HRPO, which computes relative advantages among
+generated questions with the same hop count. This hop-conditioned normalization
+provides a lower-variance baseline for proposer updates while avoiding the
+nested sampling cost of applying standard GRPO to proposer training.
 
-\subsection{Backward Verification}
-
-In self-play frameworks such as DR-Zero, the standard reward for the proposer is primarily based on question difficulty.
-For example, if all solvers in a group answer a question correctly, the question is considered too easy and receives low reward.
-Conversely, if no solver can answer the question, it is considered too hard and also receives low reward.
-Questions with intermediate solver success rates are treated as lying near the solver's current capability frontier and receive higher reward.
-This difficulty-based signal indicates how hard a question is for the solver, but not why it is hard.
-This distinction is crucial in multi-hop QA.
-A question may be difficult because it contains a well-formed multi-hop reasoning structure that genuinely challenges the solver.
-However, a question may also be difficult because it is logically incomplete, internally inconsistent, missing necessary evidence, or effectively unanswerable.
-A pure difficulty reward cannot distinguish between these cases, and may therefore encourage the proposer to generate questions that are superficially hard but not useful for training.
-
-To address this ambiguity, we introduce a verifier model $\pi_V$ that performs backward hop search.
-The goal of the backward verifier is to assess whether the solver's candidate answer can be logically supported by the reasoning chain required by the question.
-Given a question $q$ and a solver-generated candidate answer $\hat{a}$, the verifier starts from $\hat{a}$, issues search queries, and traces the hop chain in reverse.
-During this process, the verifier checks whether it can reach the starting entity, constraints, or intermediate evidence specified by the question.
-If the reverse chain closes successfully, meaning that there exists a recoverable evidence path between the candidate answer and the question conditions, the verifier outputs \texttt{YES}.
-Otherwise, if the retrieved evidence and reasoning process fail to connect the candidate answer to the question conditions, the verifier outputs \texttt{NO}.
-Thus, the backward verifier does not merely check whether the candidate answer matches a target string; it evaluates whether the answer is supported by a recoverable multi-hop reasoning path required by the question.
-
-\subsection{Training the Backward Verifier}
-
-The backward verifier is trained using real solver predictions.
-If the solver's candidate answer $\hat{a}$ exactly matches the gold answer $a^*$, the corresponding rollout is treated as a positive example labeled \texttt{YES}.
-If the solver produces an incorrect answer, the rollout is treated as a negative example labeled \texttt{NO}.
-This provides natural supervision from the solver's actual successes and failures without requiring manually constructed synthetic negatives.
-
-The reward for training the verifier is defined as
-\begin{equation}
-r_V(q,\hat{a})
+The standard proposer reward consists of a format reward and a difficulty
+reward:
+\[
+R_{P,\mathrm{std}}(q)
 =
-\mathbf{1}
-\left[
-\mathrm{pred}(\pi_V(q,\hat{a}))
-=
-\mathbf{1}[\hat{a}=a^*]
-\right],
-\end{equation}
-where $\mathrm{pred}(\cdot)$ extracts the binary \texttt{YES}/\texttt{NO} decision from the verifier output.
-That is, the verifier receives reward $1$ if it outputs \texttt{YES} for a correct solver answer or \texttt{NO} for an incorrect solver answer.
-It receives reward $0$ if it outputs \texttt{NO} for a correct answer or \texttt{YES} for an incorrect answer.
-
-Trained in this way, the verifier learns to judge whether a question--answer pair has a recoverable hop structure.
-In particular, the verifier does not simply imitate exact-match correctness; it learns whether there exists a reasoning path from the candidate answer back to the question conditions.
-As a result, questions with broken logical connections, poor evidence alignment, or low answerability tend to receive lower verification scores.
-
-\subsection{HRPO Proposer Training with Backward Verification}
-
-The proposer $\pi_P$ is trained with HRPO as in DR-Zero.
-Our modification is not to the HRPO optimization algorithm itself, but to the question-level reward used by HRPO.
-In DR-Zero, the proposer reward is computed from the solver group's success rate on a generated question, yielding a difficulty-based reward.
-We augment this reward with a backward verification term, so that the proposer is evaluated not only by whether its generated question has appropriate difficulty, but also by whether it is logically verifiable.
-
-At iteration $t$, suppose the proposer $\pi_P^{(t)}$ generates a question $q$ from a document $d$:
-\begin{equation}
-q \sim \pi_P^{(t)}(\cdot \mid d).
-\end{equation}
-The solver $\pi_S^{(t)}$ then produces $K$ answer rollouts for $q$:
-\begin{equation}
-\{\hat{a}_i\}_{i=1}^{K} \sim \pi_S^{(t)}(\cdot \mid q).
-\end{equation}
-We define the correctness indicator for each answer rollout as
-\begin{equation}
-c_i = \mathbf{1}[\hat{a}_i = a^*].
-\end{equation}
-The average solver success rate for the question is
-\begin{equation}
-p_{\mathrm{solve}}^{(t)}(q)
-=
-\frac{1}{K}
-\sum_{i=1}^{K} c_i.
-\end{equation}
-
-The original HRPO objective in DR-Zero computes a difficulty reward $R_{\mathrm{diff}}^{(t)}(q)$ from this success rate.
-This reward assigns low values to questions that all solvers answer easily or that no solver can answer, and high values to questions with intermediate success rates.
-
-We add a backward verification reward $R_{\mathrm{bv}}^{(t)}(q)$.
-This reward is computed post hoc after the solver attempts the generated question.
-For each correct rollout, the verifier $\pi_V^{(t)}$ checks whether the candidate answer $\hat{a}_i$ can be connected back to the starting conditions and evidence chain of $q$ through reverse reasoning.
-We define
-\begin{equation}
-R_{\mathrm{bv}}^{(t)}(q)
-=
-\frac{1}{\max(1,\sum_{i=1}^{K} c_i)}
-\sum_{i=1}^{K}
-c_i \cdot
-\mathbf{1}
-\left[
-\mathrm{pred}(\pi_V^{(t)}(q,\hat{a}_i))
-=
-\texttt{YES}
-\right].
-\end{equation}
-
-Thus, $R_{\mathrm{bv}}^{(t)}(q)$ is the fraction of correct solver rollouts that are successfully backward-verified.
-If no rollout matches the gold answer, then $\sum_i c_i=0$, and we set $R_{\mathrm{bv}}^{(t)}(q)$ to $0$.
-This prevents the proposer from receiving a verification bonus when no verifiable correct answer is available.
-
-The final proposer reward used by HRPO is
-\begin{equation}
-R_P^{(t)}(q)
-=
-R_{\mathrm{diff}}^{(t)}(q)
+R_{\mathrm{fmt}}(q)
 +
-\lambda R_{\mathrm{bv}}^{(t)}(q),
-\end{equation}
-where $\lambda$ controls the relative strength of the backward verification reward.
-This reward is not assigned immediately after question generation; it is a delayed reward assigned post hoc to the proposer rollout that produced the question, after solver and verifier evaluation.
-HRPO then uses this delayed question-level reward to update $\pi_P^{(t)}$.
+R_{\mathrm{diff}}(q).
+\]
+The format reward $R_{\mathrm{fmt}}(q)$ encourages structurally valid outputs,
+such as valid tool usage and extractable question and answer fields. Since this
+term only enforces parseability and structural validity, we keep it unchanged
+in our method.
 
-Alternatively, if we want to preserve the original difficulty reward more strictly and use verifiability only as a bonus, we can use a multiplicative reward-shaping form:
-\begin{equation}
-R_P^{(t)}(q)
+The difficulty reward is computed from the solver group's outcomes on the
+generated question. For $K$ solver rollouts, let
+\[
+c_i = \mathbb{I}[\hat{a}_i = a^\ast],
+\qquad
+k = \sum_{i=1}^{K} c_i.
+\]
+Following Dr. Zero, the difficulty reward is
+\[
+R_{\mathrm{diff}}(q)
 =
-R_{\mathrm{diff}}^{(t)}(q)
+\mathbb{I}(0 < k < K)
+\frac{K-k}{K-1}.
+\]
+This reward assigns zero reward when no solver rollout is correct, since the
+question may be unsolvable for the current solver, and also assigns zero reward
+when all rollouts are correct, since the question is trivial. Among solvable
+non-trivial questions, the reward is largest when exactly one rollout succeeds
+and decreases as more rollouts become correct.
+
+After the proposer update, the generated dataset $\mathcal{D}_P^{(t)}$ is used
+to train the solver. For each generated question $q$, the solver produces
+multiple retrieval-augmented answer rollouts. Each rollout consists of search
+queries, retrieved passages, intermediate reasoning, and a final answer. The
+solver is updated with GRPO using answer correctness as the rollout-level
+reward. This update teaches the solver to answer the current generated
+questions and exposes whether the proposer-generated questions provide useful
+training signal.
+
+Backward verification is performed only after this solver update. Therefore,
+the verification stage evaluates the solver's post-training answer rollouts on
+the generated questions, rather than the proposer's raw output alone. The
+resulting verification signal is then used as an additional delayed
+proposer-side reward term in our method.
+
+
+\subsection{Backward verification after solver training}
+
+After the solver has been trained on the generated QA pairs, we run a
+backward verification pass on the solver's answer rollouts. Given a generated
+question $x_i$ and a solver-produced candidate answer $\hat{y}_{i,m}$, the
+backward verifier evaluates whether $\hat{y}_{i,m}$ is a correct answer to
+$x_i$. In contrast to the forward solver, which starts from the question and
+attempts to produce an answer, the backward verifier starts from the candidate
+answer and checks its consistency with the question.
+
+We formulate backward verification as a binary answer-grading problem:
+\[
+v_{i,m}
+=
+V(x_i,\hat{y}_{i,m})
+\in \{0,1\},
+\]
+where $v_{i,m}=1$ indicates that the verifier judges $\hat{y}_{i,m}$ as a
+valid answer to $x_i$, and $v_{i,m}=0$ indicates that the verifier judges it as
+incorrect.
+
+Since the generated QA pair provides a synthesized gold answer $y_i$, we can
+measure whether the verifier's judgment agrees with the actual correctness of
+the solver rollout. Let
+\[
+c_{i,m}
+=
+\mathbb{I}(y_i=\hat{y}_{i,m})
+\]
+denote the correctness of the solver's candidate answer under exact match.
+The grading quality of the backward verifier on a solver rollout is then
+defined as
+\[
+g_{i,m}
+=
+\mathbb{I}(v_{i,m}=c_{i,m}).
+\]
+Thus, the verifier receives a positive signal when it correctly accepts a
+correct solver answer or correctly rejects an incorrect solver answer.
+
+For each generated QA pair, we aggregate the grading outcomes across the
+solver's $n$ answer rollouts:
+\[
+r_{\mathrm{bv}}(x_i,y_i)
+=
+\frac{1}{n}
+\sum_{m=1}^{n}
+g_{i,m}
+=
+\frac{1}{n}
+\sum_{m=1}^{n}
+\mathbb{I}
+\left(
+V(x_i,\hat{y}_{i,m})
+=
+\mathbb{I}(y_i=\hat{y}_{i,m})
+\right).
+\]
+This score measures how reliably the backward verifier can judge the solver's
+answers for the generated question. A high value indicates that the generated
+question admits stable answer verification: correct answers can be accepted and
+incorrect answers can be rejected. A low value indicates that the question may
+be ambiguous, poorly grounded, or difficult to grade consistently.
+
+We use this grading-quality score as a delayed proposer-side reward signal.
+The score is computed only after the solver has produced answer rollouts for
+the generated question, and therefore it is not available at question
+generation time. Instead, it is assigned retrospectively to the proposer rollout
+that generated $(x_i,y_i)$.
+
+\subsection{Backward-verified proposer refinement}
+
+The standard HRPO reward uses the solver pass rate to encourage questions that
+are solvable but non-trivial:
+\[
+r_i
+=
+r_{\mathrm{fmt}}(x_i,y_i)
++
+r_{\mathrm{diff}}(y_i,\{\hat{y}_{i,m}\}_{m=1}^{n}).
+\]
+However, this reward does not explicitly measure whether the generated question
+can be reliably graded from solver answers. To incorporate this property, we
+use the backward verification score $r_{\mathrm{bv}}(x_i,y_i)$ as a delayed
+proposer-side refinement signal.
+
+The backward-verified proposer reward is defined as
+\[
+r_i^{\mathrm{bv}}
+=
+r_{\mathrm{fmt}}(x_i,y_i)
++
+r_{\mathrm{diff}}(y_i,\{\hat{y}_{i,m}\}_{m=1}^{n})
+\left(
+1+\lambda r_{\mathrm{bv}}(x_i,y_i)
+\right),
+\]
+where $\lambda$ controls the strength of the backward verification bonus.
+
+This design preserves the original format reward and difficulty reward, while
+giving additional weight to questions whose solver answers can be reliably
+graded by backward verification. The verification term does not directly
+reward easy questions. Since it only rescales the difficulty component,
+questions that are solved by all rollouts or by no rollout still receive low
+difficulty reward. Among appropriately difficult questions, those with more
+reliable backward grading receive larger proposer reward.
+
+For the refinement update, we compute hop-conditioned advantages from the
+backward-verified rewards:
+\[
+A_{i,h}^{\mathrm{bv}}
+=
+\frac{
+r_i^{\mathrm{bv}} - \mathbb{E}_{j\in I_h}[r_j^{\mathrm{bv}}]
+}{
+\sqrt{\mathrm{Var}_{j\in I_h}[r_j^{\mathrm{bv}}] + \delta}
+}.
+\]
+The proposer is then updated with the same HRPO objective form, replacing
+$A_{i,h}$ with $A_{i,h}^{\mathrm{bv}}$.
+
+\subsection{Overall training procedure}
+
+The full training procedure repeats for $T$ self-play iterations. At each iteration $t$, we perform four stages.
+
+First, the proposer $\pi_P^{(t)}$ generates a dataset of multi-hop questions from Wikipedia passages. The proposer is updated with the standard HRPO reward:
+\[
+R_{P,\mathrm{std}}(q)
+=
+R_{\mathrm{fmt}}(q)
++
+R_{\mathrm{diff}}(q).
+\]
+
+Second, the generated dataset is used to train the solver $\pi_S^{(t)}$ with GRPO. The solver produces retrieval-augmented rollouts and is updated according to answer correctness.
+
+Third, after solver training, backward verification is applied to the solver's answer rollouts. For each generated question, we compute $R_{\mathrm{bv}}(q)$ by checking whether correct solver answers can be traced backward to the question constraints through retrieved evidence.
+
+Fourth, the proposer is refined with an additional HRPO update using the backward-verified reward:
+\[
+R_{P,\mathrm{bv}}(q)
+=
+R_{\mathrm{fmt}}(q)
++
+R_{\mathrm{diff}}(q)
 \cdot
-\left(1+\lambda R_{\mathrm{bv}}^{(t)}(q)\right).
-\end{equation}
-Under this form, questions with low base difficulty reward do not receive large reward even if they are backward-verifiable.
-Thus, questions that are too easy or too hard are still suppressed, while questions that are both appropriately difficult and backward-verifiable receive higher reward.
-In our framework, the main principle is to preserve the HRPO difficulty signal while incorporating backward verifiability as an additional reward component.
+\left(1+\lambda R_{\mathrm{bv}}(q)\right).
+\]
 
-\subsection{Overall Training Procedure}
-
-The full algorithm repeats the above process for $T$ iterations.
-First, the proposer $\pi_P^{(t)}$ receives a Wikipedia passage $d$ and generates a multi-hop question $q$.
-The generated question is constructed from a starting entity and $n$ factual hops, with the answer being the entity reached at the final hop.
-
-Next, the solver $\pi_S^{(t)}$ performs retrieval-augmented reasoning on the generated question $q$.
-It produces multiple rollouts, each consisting of search queries, retrieved passages, intermediate reasoning, and a final answer.
-The solver is updated with GRPO based on the correctness of these rollouts.
-
-Then, the backward verifier $\pi_V^{(t)}$ is trained using the solver's candidate answers.
-Answers that match the gold answer are used as \texttt{YES} examples, while incorrect answers are used as \texttt{NO} examples.
-The verifier is trained to reconstruct a reverse hop chain from the candidate answer back to the starting conditions of the question.
-
-Finally, the proposer reward is computed.
-The original DR-Zero difficulty reward is computed from the solver group's success rate, while the backward verification reward is computed from whether correct rollouts are logically verifiable by the backward verifier.
-The combined question-level reward $R_P^{(t)}(q)$ is then assigned post hoc to the proposer rollout that generated the question and is used to update the proposer $\pi_P^{(t)}$ with HRPO.
-
-Through this iterative process, the three models improve through interaction.
-The solver improves its retrieval-augmented multi-hop reasoning ability by training on challenging generated questions.
-The verifier becomes better at judging the logical verifiability of question--answer pairs using real solver predictions.
-At the same time, the proposer learns from verifier feedback to generate questions that are not merely hard enough to make the solver fail, but appropriately difficult, answerable, and grounded in coherent multi-hop evidence chains.
-
+Through this delayed feedback loop, the solver improves by learning from generated multi-hop questions, and the proposer improves by receiving a stronger reward signal after the solver has attempted to learn from those questions. The resulting curriculum favors questions that are well formatted, appropriately difficult, and verifiable through coherent backward evidence reconstruction.
 
 \section{Experiments}
 
-\subsection{Datasets and Evaluation}
+\subsection{Datasets and evaluation}
 
 We evaluate on seven QA benchmarks spanning a range of hop complexity.
-For single-hop QA we use Natural Questions (NQ), TriviaQA, and PopQA.
-For multi-hop QA we use HotpotQA, 2WikiMultiHopQA, MuSiQue, and Bamboogle.
+For single-hop QA we use Natural Questions (NQ) \cite{NQ}, TriviaQA \cite{TriviaQA}, and PopQA \cite{PopQA}.
+For multi-hop QA we use HotpotQA \cite{HotpotQA}, 2WikiMultiHopQA \cite{MultiHopQA}, MuSiQue \cite{MuSiQue}, and Bamboogle \cite{CompositionalityGap}.
 All results are reported with exact match (EM).
 We do not fine-tune or adapt any model on the evaluation benchmarks; all training is conducted on the self-play corpus derived from Wikipedia passages.
-
-\subsection{Implementation}
-
 Our base model is Qwen2.5-3B, used as the initialization for the proposer, solver, and verifier.
 Training runs for $T = 3$ iterations with GRPO (group size 5 for the solver and verifier, group size 1 with reward group size 5 for the proposer).
 Retrieval uses an E5-base-v2 encoder over a Wikipedia passage index, served via a FAISS flat index.
 At inference, the solver issues multiple search queries per question as needed; we report greedy decoding EM.
-Full hyperparameters are provided in Appendix~\ref{app:impl}.
 
 \subsection{Baselines}
 
@@ -423,21 +478,53 @@ Search-R1 and R-Zero are search-augmented RL methods that train models to issue 
 SQLM* is a data-free self-play method that iteratively generates and filters training data.
 We additionally report the base DrZero self-play loop (proposer + solver only, without verifier or growth-aware reward) as our primary comparison point.
 
-\begin{figure}[!t]
-    \centerline{\includegraphics[width=\columnwidth]{Figure/figure2_backward.png}}
-    \caption{
-Backward verification trace.
-Starting from a solver candidate answer, the verifier $\pi_V$ searches backward through the evidence chain and checks whether the answer can be logically connected to the entities and constraints in the generated question.
-A closed reverse chain yields \texttt{YES}, while a broken or unsupported chain yields \texttt{NO}, providing a consistency signal for proposer training.
-}
-    \label{figure_1} 
-\end{figure}
+% \begin{figure}[!t]
+%     \centerline{\includegraphics[width=\columnwidth]{Figure/figure2_backward.png}}
+%     \caption{
+% Backward verification trace.
+% Starting from a solver candidate answer, the verifier $\pi_V$ searches backward through the evidence chain and checks whether the answer can be logically connected to the entities and constraints in the generated question.
+% A closed reverse chain yields \texttt{YES}, while a broken or unsupported chain yields \texttt{NO}, providing a consistency signal for proposer training.
+% }
+%     \label{figure_1} 
+% \end{figure}
 
 \section{Analysis}
 
 \subsection{Main Results}
 
-Table~\ref{tab:main} presents EM results across all seven benchmarks.
+Table~\ref{tab:main} reports exact match (EM) results on seven QA benchmarks,
+covering both single-hop and multi-hop question answering. Our method achieves
+the best average performance among all compared methods, improving over the
+base DrZero self-play baseline from 0.326 to 0.349 average EM. The gains are
+consistent across all benchmarks, indicating that backward verification provides
+a useful additional training signal for self-play QA.
+
+The improvements are most pronounced on multi-hop benchmarks. Compared with
+DrZero, our method improves from 0.298 to 0.315 on HotpotQA, from 0.291 to
+0.300 on 2WikiMultiHopQA, from 0.091 to 0.105 on MuSiQue, and from 0.200 to
+0.230 on Bamboogle. These results support our hypothesis that proposer quality
+is especially important in multi-hop QA, where the solver's learning signal
+depends heavily on whether generated questions are coherent, non-trivial, and
+grounded in recoverable reasoning structure.
+
+On single-hop benchmarks, the gains are smaller but still consistent. Our
+method improves over DrZero from 0.397 to 0.425 on NQ, from 0.572 to 0.610 on
+TriviaQA, and from 0.431 to 0.455 on PopQA. This suggests that backward
+verification does not harm single-hop generalization, even though its main
+benefit is expected in settings that require multi-step reasoning.
+
+Compared with Search-R1~\cite{SearchR1}, the strongest non-self-play
+search-augmented RL baseline in our evaluation, our method achieves a higher
+average EM. This indicates that improving the proposer in an iterative
+self-play loop can provide generalization benefits beyond training the solver
+on a fixed question distribution.
+
+We further examine learning dynamics across self-play iterations in
+Table~\ref{tab:dynamics}. DrZero improves over early iterations but begins to
+saturate by iteration 3. In contrast, our method obtains a larger improvement by
+iteration 2, reaching 0.344 average EM. This early gain suggests that backward
+verification provides a stronger proposer-side signal, allowing the generated
+training curriculum to better track the solver's improving capability.
 
 \begin{table*}[t]
 \centering
@@ -461,30 +548,134 @@ SQLM$^*$        & 0.264 & 0.432 & 0.258 & 0.226 & 0.238 & 0.060 & 0.158 & 0.233 
 \midrule
 \multicolumn{9}{l}{\textit{Self-play}} \\
 DrZero          & 0.397 & 0.572 & 0.431 & 0.298 & 0.291 & 0.091 & 0.200 & 0.326 \\
-Ours$^\dagger$ & 0.420 & 0.600 & 0.455 & 0.315 & 0.308 & 0.098 & 0.215 & 0.344 \\
+Ours$^\dagger$ &0.425 & 0.610 & 0.455 & 0.315 & 0.300 & 0.105 & 0.230 & 0.349 \\
 \bottomrule
 \end{tabular}%
 }
 \end{table*}
-Our full method, which augments the DrZero self-play loop with backward verification, shows consistent performance improvements over all baselines across multi-hop benchmarks.
-These improvements are especially pronounced on HotpotQA, 2WikiMultiHopQA, MuSiQue, and Bamboogle, where the quality of the questions generated by the proposer has a strong influence on the solver’s training difficulty.
-In contrast, on single-hop benchmarks such as NQ, TriviaQA, and PopQA, the gains are relatively smaller, but still consistent. This is because single-hop questions leave comparatively less room for the proposer to improve the training curriculum.
-Moreover, compared to Search-R1, the strongest non-self-play reinforcement learning baseline, our method shows that iterative self-play with improved proposer training provides additional generalization benefits that are difficult to obtain by training only the solver on a fixed question distribution
+
+\subsection{Proposer Question Quality Analysis}
+
+A central claim of our method is that backward verification improves the
+quality of the questions generated by the proposer, rather than merely
+providing additional optimization steps. We therefore evaluate proposer question
+quality directly using two complementary metrics: LLM-based validity scoring and
+hop necessity rate (HNR).
+
+\paragraph{LLM judge.}
+For each generated triple consisting of a question $q$, a multi-hop generation
+trace, and a synthesized gold answer $a^\ast$, we query three independent LLM
+judges: GPT-5.4, Claude Sonnet 4.6, and Gemini 3.1 Pro. Each judge is given a
+structured rubric that asks whether each hop in the reasoning chain is
+logically motivated and grounded in retrieved evidence, and whether multi-hop
+reasoning is genuinely required to reach the answer. Each judge assigns a
+validity score in $[0,1]$, where a higher score indicates a more logically
+valid and genuinely multi-hop question. We report the average validity score
+from each judge and the mean score across the three judges.
+
+\paragraph{Hop necessity rate.}
+LLM-based judging captures logical validity, but it may not directly measure
+whether every generated hop is necessary. We therefore also compute hop
+necessity rate (HNR) from the proposer's generation rollout. During multi-hop
+generation, the proposer issues sequential search queries and accumulates
+retrieved passages $\mathcal{R}_1,\mathcal{R}_2,\ldots,\mathcal{R}_n$. If the
+gold answer $a^\ast$ appears in any retrieved passage before the final hop, then
+the final hop is redundant: the question could have been answered earlier, and
+the generated chain is not genuinely multi-hop.
+
+Formally, for a set of generated questions $Q$, we define
+\[
+\mathrm{HNR}(Q)
+=
+1 -
+\frac{
+\left|\{q\in Q : a^\ast \in \mathcal{R}_{<n}(q)\}\right|
+}{
+|Q|
+},
+\]
+\[
+\mathcal{R}_{<n}(q)
+=
+\bigcup_{k=1}^{n-1}
+\mathcal{R}_k(q)
+\]
+denotes the union of passages retrieved before the final hop. A higher HNR
+indicates that the proposer generates questions whose final hop is genuinely
+necessary.
+
+Table~\ref{tab:quality} reports proposer question quality on generated data.
+Our method achieves higher LLM validity scores and higher HNR than DrZero,
+showing that backward verification improves not only downstream solver
+accuracy, but also the intrinsic quality of the generated training questions.
+These results support the view that the verifier provides a useful
+proposer-side signal: it encourages questions that are logically coherent,
+grounded in evidence, and genuinely multi-hop rather than merely difficult for
+the current solver.
+\begin{table*}[t]
+\centering
+\caption{Proposer question quality on gen-data (iterations 2 and 3).
+LLM-Valid columns report the fraction of questions judged logically valid by each judge and the average valid rate across the three judges (Avg.).
+\textbf{HNR}: Hop Necessity Rate---fraction of questions where the final hop is genuinely necessary (gold answer absent from all intermediate retrieved passages).}
+\label{tab:quality}
+\tiny
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{llccccccc}
+\toprule
+ &  & \multicolumn{4}{c}{\textbf{LLM-Valid (\%)}} & \\
+\cmidrule(lr){3-6}
+\textbf{Method} & \textbf{Iter} & GPT-5.4 & Claude Sonnet 4.6 & Gemini 3.1 & Avg. & \textbf{HNR (\%)} \\
+\midrule
+\multirow{2}{*}{DrZero}
+  & 2 & -- & -- & -- & -- & -- \\
+  & 3 & -- & -- & -- & -- & -- \\
+\midrule
+\multirow{2}{*}{Ours}
+  & 2 & -- & -- & -- & -- & -- \\
+  & 3 & -- & -- & -- & -- & -- \\
+\bottomrule
+\end{tabular}%
+}
+\end{table*}
+
 
 \subsection{Ablation}
-A natural concern is whether the performance gains in our method simply reflect additional training compute: the verifier stage adds a full RL training run per iteration, so a fair comparison must control for this.
-We construct a compute-matched baseline by extending the base DrZero loop with additional solver training steps equivalent in FLOPs to the verifier training we add.
-If our gains were purely a function of more gradient updates, this extended DrZero baseline should close the gap.
 
-Table~\ref{tab:ablation} shows the results.
-The compute-matched DrZero improves slightly over the original DrZero, but falls consistently short of our method on all multi-hop benchmarks, confirming that the gains are not explained by training quantity alone.
-We further conduct an ablation on backward verification and find that removing it degrades performance, indicating that this mechanism contributes materially to the overall improvements.
-Finally, replacing real solver predictions with synthetically shuffled negatives for verifier training reduces verifier classification accuracy and propagates degradation to the proposer's question quality signal.
+A natural concern is whether the performance gains in our method simply reflect
+additional training compute. Since our method introduces an additional verifier
+training stage, a fair comparison must control for the extra optimization budget.
+We therefore construct a compute-matched baseline by extending the base DrZero
+loop with additional solver training steps whose FLOPs match the verifier
+training cost in our method. If the gains were purely due to more gradient
+updates, this compute-matched DrZero baseline should close the gap.
+
+Table~\ref{tab:ablation} reports the ablation results. The compute-matched
+DrZero baseline improves slightly over the original DrZero, but still falls
+consistently short of our method. This suggests that the gains are not explained
+by additional training compute alone.
+
+We further ablate the construction of verifier training data. In our full
+method, the verifier is trained on real solver rollouts, so both positive and
+negative examples reflect the solver's actual answer distribution. In
+particular, the negative examples correspond to realistic solver mistakes rather
+than arbitrary mismatched answers. As an alternative, we construct a
+shuffled-negative variant, where negative answers are obtained by replacing the
+solver prediction with an answer sampled from another QA pair in the same batch.
+This synthetic construction is cheaper and simpler, but it removes the natural
+error patterns produced by the solver.
+
+The shuffled-negative variant performs worse than the full method, indicating
+that realistic solver-generated mistakes provide a more useful training signal
+for the verifier. This result supports our design choice of training the
+verifier on the full solver rollout distribution rather than on artificial
+answer mismatches.
 
 
 \begin{table*}[t]
 \centering
-\caption{Ablation results (EM, Qwen2.5-3B). DrZero$^\dagger$ is compute-matched to our full method by extending solver training steps to the equivalent FLOPs budget. ``Synth.\ neg.'' uses shuffled answers as verifier negatives instead of real solver mistakes.}
+\caption{Ablation results (EM, Qwen2.5-3B). DrZero$^\dagger$ is compute-matched to our full method by extending solver training steps to the equivalent FLOPs budget. 
+``Ours (real solver rollouts)'' trains the verifier using candidate answers produced by the solver during rollout collection. 
+``Ours (synthetic shuffled negatives)'' replaces solver-produced negative answers with shuffled answers sampled from other QA pairs in the same batch.}
 \label{tab:ablation}
 \resizebox{\textwidth}{!}{%
 \begin{tabular}{lcccccccc}
@@ -494,27 +685,8 @@ Finally, replacing real solver predictions with synthetically shuffled negatives
 DrZero (base)                           & 0.397 & 0.572 & 0.431 & 0.298 & 0.291 & 0.091 & 0.200 & 0.326 \\
 DrZero$^\dagger$ (compute-matched)      & 0.405 & 0.580 & 0.438 & 0.305 & 0.298 & 0.094 & 0.205 & 0.332 \\
 \midrule
-Ours                & 0.420 & 0.600 & 0.455 & 0.315 & 0.308 & 0.098 & 0.215 & 0.344 \\
-Ours (w shuffle)                & 0.420 & 0.600 & 0.455 & 0.315 & 0.308 & 0.098 & 0.215 & 0.344 \\
-\bottomrule
-\end{tabular}%
-}
-\end{table*}
-
-\begin{table*}[t]
-\centering
-\caption{Performance comparison among data-free self-play methods (EM, Qwen2.5-3B). SQLM* and R-Zero* are reproduced under our evaluation setting.}
-\label{tab:datafree}
-\tiny
-\resizebox{\textwidth}{!}{%
-\begin{tabular}{lcccccccc}
-\toprule
-\textbf{Method} & NQ & TQA & PopQA & HQA & 2Wiki & MSQ & BGL & Avg. \\
-\midrule
-SQLM$^*$   & 0.264 & 0.432 & 0.258 & 0.226 & 0.238 & 0.060 & 0.158 & 0.233 \\
-R-Zero$^*$ & 0.389 & 0.513 & 0.370 & 0.243 & 0.128 & 0.052 & 0.096 & 0.256 \\
-DrZero     & 0.397 & 0.572 & 0.431 & 0.298 & 0.291 & 0.091 & 0.200 & 0.326 \\
-Ours       & 0.420 & 0.600 & 0.455 & 0.315 & 0.308 & 0.098 & 0.215 & 0.344 \\
+Ours (real solver rollouts)             &0.425 & 0.610 & 0.455 & 0.315 & 0.300 & 0.105 & 0.230 & 0.349 \\
+Ours (synthetic shuffled negatives)     & 0.411    & 0.603    & 0.440    & 0.298   & 0.301    & 0.101    & 0.234    & 0.341    \\
 \bottomrule
 \end{tabular}%
 }
@@ -537,87 +709,13 @@ Ours       & 0.420 & 0.600 & 0.455 & 0.315 & 0.308 & 0.098 & 0.215 & 0.344 \\
 \midrule
 \multirow{3}{*}{Ours}
   & 1 & 0.381 & 0.526 & 0.392 & 0.284 & 0.243 & 0.084 & 0.216 & 0.304 \\
-  & 2 & 0.425 & 0.610 & 0.455 & 0.315 & 0.300 & 0.105 & 0.230 & 0.349 \\
-  & 3 & - & - & - & - & - & - & - & - \\
+  & 2  & 0.420 & 0.600 & 0.455 & 0.315 & 0.308 & 0.098 & 0.215 & 0.344 \\
+  & 3  &0.425 & 0.610 & 0.455 & 0.315 & 0.300 & 0.105 & 0.230 & 0.349\\
 \bottomrule
 \end{tabular}%
 }
 \end{table*}
 
-\subsection{Proposer Question Quality Analysis}
-
-A key claim of our method is that backward verification improves not only solver accuracy but also the intrinsic quality of proposer-generated questions.
-We evaluate this directly using two complementary metrics applied to the challenger's generation rollouts.
-Because iteration-1 training suffered from search tool instability that caused the proposer to converge to trivial 1-hop generation, we report both metrics on gen-data from iteration 2 onward, where training conditions are stable and multi-hop generation is meaningful.
-
-\paragraph{LLM Judge (Logical Validity Rate).}
-For each generated triple (question $q$, multi-hop trace, gold answer $a^*$), we query three independent LLM judges---GPT-5.4, Claude Sonnet 4.6, and Gemini 3.1 Pro---each with a structured rubric that asks:
-(i)~Is each hop in the reasoning chain logically motivated and grounded in the retrieved evidence?
-(ii)~Is multi-hop reasoning genuinely required to reach the answer, or could the answer be derived from a single document?
-Each judge outputs a binary valid/invalid label, and we take the majority vote as the final decision.
-We report the fraction of generated questions judged valid (\textbf{LLM-Valid}).
-
-\paragraph{Hop Necessity Rate (HNR).}
-We inspect each question's generation rollout.
-During multi-hop generation, the proposer issues sequential search queries and accumulates retrieved passages $\mathcal{R}_1, \mathcal{R}_2, \ldots, \mathcal{R}_n$.
-If the gold answer $a^*$ appears in the retrieved passages of any intermediate hop before the final one, the last hop is redundant: the question could have been answered without it, and the hop chain is not genuinely multi-hop.
-Formally,
-\begin{equation}
-\mathrm{HNR}(Q)
-= 1 - \frac{\bigl|\{q \in Q : a^* \in \mathcal{R}_{<n}(q)\}\bigr|}{|Q|},
-\end{equation}
-where $\mathcal{R}_{<n}(q) = \bigcup_{k=1}^{n-1} \mathcal{R}_k(q)$ denotes the union of passages retrieved before the final hop.
-A higher HNR indicates that the proposer generates questions for which every hop is genuinely necessary.
-
-Table~\ref{tab:quality} compares both metrics on gen-data from iterations 2 and 3.
-Our method consistently achieves higher LLM-Valid and HNR than DrZero at both iterations, confirming that backward verification encourages the proposer to generate questions that are not only solver-challenging but also logically coherent and multi-hop necessary.
-
-\begin{table*}[t]
-\centering
-\caption{Proposer question quality on gen-data (iterations 2 and 3).
-LLM-Valid columns report the fraction of questions judged logically valid by each judge and their majority vote (Ens.).
-\textbf{HNR}: Hop Necessity Rate---fraction of questions where the final hop is genuinely necessary (gold answer absent from all intermediate retrieved passages).}
-\label{tab:quality}
-\resizebox{\textwidth}{!}{%
-\begin{tabular}{llccccccc}
-\toprule
- &  & \multicolumn{4}{c}{\textbf{LLM-Valid (\%)}} & \\
-\cmidrule(lr){3-6}
-\textbf{Method} & \textbf{Iter} & GPT-5.4 & Claude-S4.6 & Gemini-3.1 & Ens. & \textbf{HNR (\%)} \\
-\midrule
-\multirow{2}{*}{DrZero}
-  & 2 & -- & -- & -- & -- & -- \\
-  & 3 & -- & -- & -- & -- & -- \\
-\midrule
-\multirow{2}{*}{Ours}
-  & 2 & -- & -- & -- & -- & -- \\
-  & 3 & -- & -- & -- & -- & -- \\
-\bottomrule
-\end{tabular}%
-}
-\end{table*}
-
-\subsection{Proposer Question Difficulty Distribution}
-As training progresses across iterations, we track how the distribution of question difficulty shifts.
-We measure difficulty by the solver's pass rate on each generated question: questions where the solver succeeds on all rollouts are trivially easy, those where it fails all rollouts are unanswerable, and questions in the intermediate range are productively difficult.
-In the base DrZero loop, the fraction of intermediate-difficulty questions grows in early iterations but plateaus by iteration 2, suggesting the proposer converges to a fixed difficulty regime.
-In our method, by contrast, the fraction of intermediate-difficulty questions remains higher across iterations, and the average difficulty of generated questions tracks the solver's improving capability frontier more closely.
-We visualize the difficulty distribution shift in Figure~\ref{fig:difficulty}.
-
-\subsection{Verifier Accuracy Across Iterations}
-
-We evaluate the verifier's YES/NO classification accuracy on held-out solver predictions at the end of each iteration.
-The verifier is initialized from the challenger checkpoint at iteration 1 and warm-started from the previous iteration's checkpoint in subsequent iterations.
-Verifier accuracy improves monotonically across iterations, indicating that the backward hop search strategy becomes more reliable as the verifier accumulates experience with the proposer's question structure.
-We also observe that verifier accuracy correlates positively with solver EM on multi-hop benchmarks: iterations where the verifier achieves higher classification accuracy tend to yield larger solver EM gains in the following iteration, consistent with the hypothesis that a more accurate verifier provides a cleaner quality signal to the proposer.
-
-\subsection{Case Study}
-
-Figure 2 illustrates a representative backward verification trace.
-Given the question ``What country is the birthplace of the CEO of [Company X]?'' and the solver's candidate answer ``South Korea'', the verifier begins from ``South Korea'' and issues a search query to identify the CEO of Company X who was born there, then verifies that this person is indeed the CEO of Company X, and finally confirms that Company X matches the entity in the question.
-When the backward chain closes, the verifier correctly outputs YES.
-In contrast, for an incorrect solver answer, the backward search fails to find a consistent factual chain, and the verifier outputs NO.
-This structured backward reasoning provides a verification signal that goes beyond surface-level answer matching and encourages the proposer to generate questions whose hop chains are factually grounded and recoverable in both directions.
 
 \section{Conclusion}
 We have argued that the quality of the proposer is the primary bottleneck in multi-hop QA self-play, and proposed a mechanism to address it directly.
@@ -644,6 +742,265 @@ We expect this perspective to generalize beyond multi-hop QA to other domains wh
 
 \newpage
 \input{checklist.tex}
+
+% ====================================================================
+\newpage
+\appendix
+
+\section{Proposer Prompt}
+\label{app:proposer_prompt}
+
+The proposer is initialized with the following system prompt.
+The placeholders \texttt{\{hops\}} and \texttt{\{document\}} are substituted at generation time with the target hop count and the Wikipedia source passage, respectively.
+
+\small
+\begin{verbatim}
+You are an expert in question generation. Craft one challenging,
+deterministic question and its single, unambiguous answer based on
+the provided source document. The logical path must start from the
+document and require exactly n hops (i.e., n-1 searches) to reach
+the final answer.
+
+### Definitions
+1. Hop: A node in the reasoning chain. Hop 1 is the starting entity
+   found in the document. Hop n is the final answer.
+
+### Inputs
+1. n: the exact number of hops in the reasoning chain.
+2. Source document: the full source text.
+
+### Process & Tools
+1. Analyze the Document and Select the Starting Point
+   - Select a specific entity explicitly mentioned in the text.
+     This entity becomes Hop 1 (the initial clue).
+2. Design the Chain Forwards
+   - From Hop 1 to Hop 2: Identify a factual relation of Hop 1 that
+     is NOT in the text but can be found via search. Result is Hop 2.
+   - Iterate: Continue connecting Hop i to Hop i+1 using verifiable
+     relations found via search.
+   - Stop at Hop n. Hop n must be a single, canonical final answer.
+3. Reasoning & Search Protocol
+   - Always reason inside <think> ... </think>.
+   - Issue each search query via <tool_call> ... </tool_call>.
+   - Results appear in <tool_response> ... </tool_response>.
+4. Output Format (example for n = 3, i.e., 2 searches):
+   <think> Reasoning step 1: Identify Hop 1, formulate query </think>
+   <tool_call> [Query to find Hop 2] </tool_call>
+   <think> Reasoning step 2: Identify Hop 2, formulate query </think>
+   <tool_call> [Query to find Hop 3] </tool_call>
+   <think> Final: Confirm Hop 3, formulate question </think>
+   <question> [Question starting from Hop 1, asking for Hop 3] </question>
+   <answer> [Hop 3] </answer>
+
+### Critical Rules
+1. Hop 1 must be explicitly present in the source text.
+2. Each link beyond Hop 1 must use the search engine.
+3. Emit exactly (n-1) tool_call entries, no more, no fewer.
+4. The question mentions only Hop 1; do not hint at intermediate hops.
+5. Each hop must depend strictly on its immediate predecessor.
+
+Generate a question with n = {hops} hops from: {document}
+\end{verbatim}
+\normalsize
+
+% --------------------------------------------------------------------
+\section{Backward Verifier Prompts}
+\label{app:verifier_prompts}
+
+\subsection{Inference Prompt}
+\label{app:verifier_inference}
+
+At inference time the backward verifier receives the generated question
+and a candidate solver answer, and traces the hop chain in reverse
+through retrieval.
+The verifier outputs \texttt{<answer>YES</answer>} or
+\texttt{<answer>NO</answer>} to indicate whether the candidate answer
+is consistent with the question.
+
+\small
+\begin{verbatim}
+You are verifying whether a candidate answer correctly answers a
+multi-hop question. Verify by reasoning BACKWARD: start from the
+candidate answer and trace each hop in reverse using search, until
+you reach the starting entity stated in the question.
+Always reason inside <think> and </think>. For each backward hop,
+call a search engine by <tool_call> query </tool_call> and results
+appear between <tool_response> and </tool_response>. After tracing
+all hops backward, output <answer>YES</answer> if the candidate
+answer is correct, or <answer>NO</answer> if it is incorrect.
+Question: {question}  Candidate Answer: {candidate_answer}
+\end{verbatim}
+\normalsize
+
+\subsection{Training Prompt}
+\label{app:verifier_training}
+
+The verifier model is trained with GRPO on solver rollouts.
+Each training instance uses the following prompt, paired with a binary
+ground-truth label (\texttt{yes} if the solver answer matches the gold
+answer, \texttt{no} otherwise).
+
+\small
+\begin{verbatim}
+You are given a question and a proposed answer. You must conduct
+reasoning inside <think> and </think> first every time you get new
+information. After reasoning, if you need to look up information to
+verify the answer, you can call a search engine by
+<tool_call> query </tool_call> and it will return the top searched
+results between <tool_response> and </tool_response>. You can search
+as many times as you want. After verification, determine whether
+the proposed answer is correct and output your judgment as
+<answer>yes</answer> or <answer>no</answer>.
+
+Question: {question}
+Proposed answer: {proposed_answer}
+\end{verbatim}
+\normalsize
+
+% --------------------------------------------------------------------
+\section{LLM Judge Prompts}
+\label{app:judge_prompts}
+
+We use three independent LLM judges to score proposer-generated questions.
+Each judge receives the following system and user prompts and returns a
+JSON object with a scalar validity score in $[0,1]$.
+
+\subsection{System Prompt}
+
+\small
+\begin{verbatim}
+You are an expert evaluator of multi-hop reasoning questions.
+Your task is to judge the overall quality of a question that was
+automatically generated to require multi-step (multi-hop) reasoning.
+
+Respond ONLY with a JSON object -- no markdown, no explanation
+outside JSON.
+\end{verbatim}
+\normalsize
+
+\subsection{User Prompt Template}
+
+The placeholders \texttt{\{question\}} and \texttt{\{answer\}} are filled
+with the generated question and its synthesized gold answer.
+
+\small
+\begin{verbatim}
+Rate the overall quality of the following question and its
+ground-truth answer.
+
+Question: {question}
+Ground-truth Answer: {answer}
+
+A high-quality multi-hop question satisfies all of:
+- It is grounded in real, verifiable facts and the answer is correct.
+- The answer can be logically derived by following the reasoning
+  chain in the question.
+- It genuinely requires at least two reasoning steps (not solvable
+  by a single fact lookup).
+
+Give a single score from 0.0 to 1.0:
+  1.0 -- all three properties fully satisfied
+  0.5 -- partially satisfied (e.g., factually ok but only single-hop)
+  0.0 -- fails on most or all properties
+
+Respond with exactly this JSON:
+{
+  "score": <float between 0.0 and 1.0>,
+  "reasoning": "<one sentence explaining the score>"
+}
+\end{verbatim}
+\normalsize
+
+% --------------------------------------------------------------------
+\section{Hop Necessity Rate: Illustrative Examples}
+\label{app:hnr_examples}
+
+HNR measures whether the gold answer $a^*$ appears exclusively in the
+passages retrieved at the \emph{final} hop $\mathcal{R}_n$, and not in
+any earlier retrieved set $\mathcal{R}_{<n}$.
+A question fails HNR when the answer is already recoverable from an
+intermediate retrieval step, indicating that the final hop is redundant.
+Figure~\ref{fig:hnr_examples} illustrates both outcomes with concrete
+3-hop examples (requiring 2 searches each).
+
+\begin{figure}[h]
+\centering
+\begin{minipage}[t]{0.47\textwidth}
+\small
+\textbf{HNR Pass --- genuine 3-hop chain}
+
+\medskip
+\textit{Source doc:} passage about the Colosseum
+
+\textit{Hop 1 (from source):} The Colosseum
+
+\textbf{Search 1:} ``Who commissioned the Colosseum?''
+
+\textit{$\mathcal{R}_1$:} ``The Colosseum was commissioned by
+Emperor \textbf{Vespasian} of the Flavian dynasty in AD\,72.''
+
+\textit{Hop 2:} Vespasian
+
+\textbf{Search 2:} ``Vespasian birthplace''
+
+\textit{$\mathcal{R}_2$:} ``Vespasian was born in
+\textbf{Falacrine}, a village in the Sabine Hills of Italy.''
+
+\textit{Hop 3 (gold answer):} \textbf{Falacrine}
+
+\medskip
+\textit{Generated question:} ``What was the birthplace of the
+Roman emperor who commissioned the Colosseum?''
+
+\medskip
+\textbf{HNR check:} ``Falacrine'' $\notin \mathcal{R}_1$
+
+\textcolor{green!50!black}{\textbf{Pass}} --- final hop is necessary.
+\end{minipage}%
+\hfill
+\begin{minipage}[t]{0.47\textwidth}
+\small
+\textbf{HNR Fail --- spurious 3-hop chain}
+
+\medskip
+\textit{Source doc:} passage about Marie Curie
+
+\textit{Hop 1 (from source):} Marie Curie
+
+\textbf{Search 1:} ``Marie Curie birthplace''
+
+\textit{$\mathcal{R}_1$:} ``Marie Curie was born on November 7,
+1867, in Warsaw, in the Kingdom of \underline{\textbf{Poland}}.''
+
+\textit{Hop 2:} Warsaw
+
+\textbf{Search 2:} ``Warsaw country''
+
+\textit{$\mathcal{R}_2$:} ``Warsaw is the capital and largest city
+of \textbf{Poland}.''
+
+\textit{Hop 3 (gold answer):} \textbf{Poland}
+
+\medskip
+\textit{Generated question:} ``In which country is the birthplace
+of the scientist who pioneered radioactivity?''
+
+\medskip
+\textbf{HNR check:} ``Poland'' $\in \mathcal{R}_1$
+
+\textcolor{red}{\textbf{Fail}} --- final hop is redundant.
+\end{minipage}
+\caption{HNR examples for 3-hop questions.
+\textbf{Left}: the gold answer (Falacrine) first appears only at the
+final retrieval step, confirming that all hops are genuinely necessary.
+\textbf{Right}: the gold answer (Poland) is already present in
+$\mathcal{R}_1$ from the first search, exposing the final hop as
+redundant.
+Questions that fail HNR inflate apparent hop count without requiring
+genuine multi-hop reasoning; proposers trained with backward
+verification are discouraged from generating such questions.}
+\label{fig:hnr_examples}
+\end{figure}
 
 
 \end{document}

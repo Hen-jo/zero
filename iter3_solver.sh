@@ -34,7 +34,7 @@ model_name=$(basename "$model" | tr '[:upper:]' '[:lower:]')
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUTPUT_DIR=/input/output/zero_no2
 CONFIG_PATH="$SCRIPT_DIR/config"
-TOOL_CONFIG="$CONFIG_PATH/search_tool_config.yaml"
+TOOL_CONFIG="$CONFIG_PATH/search_tool_config_solver.yaml"
 
 CHALLENGER_NAME="challenger_iter${cur_iter}_ratio${hop_ratio}_${challenger_algorithm}_group${challenger_grpo_group_size}-${challenger_reward_group_size}_${model_name}"
 SOLVER_NAME="solver_iter${cur_iter}_ratio${hop_ratio}_${algorithm}_group${grpo_group_size}_${model_name}"

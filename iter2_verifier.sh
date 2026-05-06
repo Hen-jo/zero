@@ -48,7 +48,7 @@ SOLVER_NAME="solver_iter${cur_iter}_ratio${hop_ratio}_${solver_algorithm}_group$
 VERIFIER_NAME="verifier_iter${cur_iter}_ratio${hop_ratio}_${algorithm}_group${grpo_group_size}_${model_name}"
 
 CHALLENGER_CKPT="${EXP_DIR}/${CHALLENGER_NAME}/challenger_hf"
-SOLVER_CKPT="${EXP_DIR}/${SOLVER_NAME}/solver_hf"
+# SOLVER_CKPT not needed: iter2 uses pre-generated solver_pred parquet directly
 
 TRAIN_DATA="$OUTPUT_DIR/data/verifier_${CHALLENGER_NAME}/train.parquet"
 VAL_DATA="/input/data/Drzero/test.parquet"
@@ -77,16 +77,7 @@ else
     echo "[$(date '+%H:%M:%S')] [0/4] Challenger 이미 변환됨, 건너뜀: $CHALLENGER_CKPT"
 fi
 
-if [ ! -d "$SOLVER_CKPT" ]; then
-    echo "[$(date '+%H:%M:%S')] [0/4] Solver 체크포인트 변환 중..."
-    python -m verl.model_merger merge \
-        --backend fsdp \
-        --local_dir "${EXP_DIR}/${SOLVER_NAME}/global_step_${solver_step}/actor" \
-        --target_dir "$SOLVER_CKPT"
-    echo "[$(date '+%H:%M:%S')] [0/4] Solver 변환 완료: $SOLVER_CKPT"
-else
-    echo "[$(date '+%H:%M:%S')] [0/4] Solver 이미 변환됨, 건너뜀: $SOLVER_CKPT"
-fi
+# Solver conversion removed: iter2 reads solver_pred parquet, no inference needed
 
 echo "[$(date '+%H:%M:%S')] [1/4] Verifier 학습 데이터 생성 중..."
 python "$SCRIPT_DIR/scripts/data_process/verifier_data.py" \

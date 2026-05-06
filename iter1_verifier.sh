@@ -45,7 +45,10 @@ SOLVER_NAME="solver_iter1_ratio${hop_ratio}_${algorithm}_group${grpo_group_size}
 VERIFIER_NAME="verifier_iter1_ratio${hop_ratio}_${algorithm}_group${grpo_group_size}_${model_name}"
 
 CHALLENGER_CKPT="${EXP_DIR}/${CHALLENGER_NAME}/challenger_hf"
-SOLVER_CKPT="${EXP_DIR}/${SOLVER_NAME}/solver_hf"
+# main_solver_generation.py uses wg.load_checkpoint which expects FSDP shards
+# (actor/model_world_size_8_rank_X.pt) — use global_step dir directly, not solver_hf.
+SOLVER_CKPT="${EXP_DIR}/${SOLVER_NAME}/global_step_${solver_step}"
+SOLVER_HF_CKPT="${EXP_DIR}/${SOLVER_NAME}/solver_hf"  # kept for reference, not used here
 
 GEN_DATA_PATH="$OUTPUT_DIR/data/zero_${CHALLENGER_NAME}.parquet"
 SOLVER_PRED_FULL="$OUTPUT_DIR/data/solver_pred_full_${SOLVER_NAME}.parquet"
@@ -84,15 +87,12 @@ else
     echo "[$(date '+%H:%M:%S')] [0/4] Challenger 이미 변환됨, 건너뜀: $CHALLENGER_CKPT"
 fi
 
-if [ ! -d "$SOLVER_CKPT" ]; then
-    echo "[$(date '+%H:%M:%S')] [0/4] Solver 체크포인트 변환 중..."
-    python -m verl.model_merger merge \
-        --backend fsdp \
-        --local_dir "${EXP_DIR}/${SOLVER_NAME}/global_step_${solver_step}/actor" \
-        --target_dir "$SOLVER_CKPT"
-    echo "[$(date '+%H:%M:%S')] [0/4] Solver 변환 완료: $SOLVER_CKPT"
+# Solver: no HF conversion needed — main_solver_generation.py loads FSDP shards directly.
+if [ ! -d "$SOLVER_CKPT/actor" ]; then
+    echo "[$(date '+%H:%M:%S')] [0/4] [ERROR] Solver FSDP checkpoint not found: $SOLVER_CKPT/actor"
+    exit 1
 else
-    echo "[$(date '+%H:%M:%S')] [0/4] Solver 이미 변환됨, 건너뜀: $SOLVER_CKPT"
+    echo "[$(date '+%H:%M:%S')] [0/4] Solver FSDP checkpoint 확인됨: $SOLVER_CKPT"
 fi
 
 # ── [1/4] Retrieval server ────────────────────────────────────────────────

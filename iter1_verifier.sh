@@ -53,15 +53,7 @@ SOLVER_CKPT="${EXP_DIR}/${SOLVER_NAME}/global_step_${solver_step}"
 SOLVER_HF_CKPT="${EXP_DIR}/${SOLVER_NAME}/solver_hf"  # kept for reference, not used here
 
 GEN_DATA_PATH="$OUTPUT_DIR/data/zero_${CHALLENGER_NAME}.parquet"
-# solver_pred_ (from save_last_rollout_path in iter1_solver.sh) takes priority;
-# fall back to solver_pred_full_ from explicit main_solver_generation inference
-SOLVER_PRED_ROLLOUT="$OUTPUT_DIR/data/solver_pred_${SOLVER_NAME}.parquet"
 SOLVER_PRED_FULL="$OUTPUT_DIR/data/solver_pred_full_${SOLVER_NAME}.parquet"
-# use whichever exists; if neither, the inference block below will create solver_pred_full_
-if [ -f "$SOLVER_PRED_ROLLOUT" ]; then
-    SOLVER_PRED_FULL="$SOLVER_PRED_ROLLOUT"
-    echo "[$(date '+%H:%M:%S')] [2/4] solver_pred 롤아웃 파일 발견, inference 건너뜀: $SOLVER_PRED_ROLLOUT"
-fi
 VERIFIER_DATA_DIR="$OUTPUT_DIR/data/verifier_${CHALLENGER_NAME}"
 TRAIN_DATA="$VERIFIER_DATA_DIR/train.parquet"
 VAL_DATA="/input/data/Drzero/test.parquet"

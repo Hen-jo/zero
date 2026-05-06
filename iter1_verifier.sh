@@ -32,6 +32,8 @@ challenger_reward_group_size=5
 challenger_step=33
 
 # Solver iter1 checkpoint (for generating verifier training data)
+solver_algorithm=grpo
+solver_grpo_group_size=5
 solver_step=30
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -41,7 +43,7 @@ CONFIG_PATH="$SCRIPT_DIR/config"
 TOOL_CONFIG="$CONFIG_PATH/search_tool_config.yaml"
 
 CHALLENGER_NAME="challenger_iter1_ratio${hop_ratio}_${challenger_algorithm}_group${challenger_grpo_group_size}-${challenger_reward_group_size}_${model_name}"
-SOLVER_NAME="solver_iter1_ratio${hop_ratio}_${algorithm}_group${grpo_group_size}_${model_name}"
+SOLVER_NAME="solver_iter1_ratio${hop_ratio}_${solver_algorithm}_group${solver_grpo_group_size}_${model_name}"
 VERIFIER_NAME="verifier_iter1_ratio${hop_ratio}_${algorithm}_group${grpo_group_size}_${model_name}"
 
 CHALLENGER_CKPT="${EXP_DIR}/${CHALLENGER_NAME}/challenger_hf"

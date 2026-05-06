@@ -110,7 +110,24 @@ PYTHONUNBUFFERED=1 python $SCRIPT_DIR/search/retrieval_server.py \
 RETRIEVAL_PID=$!
 wait_for_port 8000 $RETRIEVAL_PID $LOG_DIR/retrieval_server.log
 
-# ── [2/4] Solver inference on full challenger gen data ───────────────────
+# ── [2/4] Solver inference (샘플링된 입력만 사용, 1920 훈련 샘플 기준 2x 버퍼) ──
+SAMPLED_GEN_DATA="$OUTPUT_DIR/data/sampled_gen_${CHALLENGER_NAME}.parquet"
+if [ ! -f "$SAMPLED_GEN_DATA" ]; then
+    python -c "
+import pandas as pd
+df = pd.read_parquet('$GEN_DATA_PATH')
+# 2500 rows: 1920 target + ~30% buffer for empty-answer skips, stratified by data_source
+if 'data_source' in df.columns and len(df) > 2500:
+    sampled = df.groupby('data_source', group_keys=False).apply(
+        lambda g: g.sample(n=max(1, round(2500 * len(g) / len(df))), random_state=42))
+    sampled = sampled.sample(n=min(2500, len(sampled)), random_state=42)
+else:
+    sampled = df.sample(n=min(2500, len(df)), random_state=42)
+sampled.reset_index(drop=True).to_parquet('$SAMPLED_GEN_DATA', index=False)
+print(f'Sampled {len(sampled)} / {len(df)} rows for solver inference')
+"
+fi
+
 if [ ! -f "$SOLVER_PRED_FULL" ]; then
     echo "[$(date '+%H:%M:%S')] [2/4] Solver inference 시작 (${SOLVER_NAME} @ step ${solver_step})..."
     python -m verl.trainer.main_solver_generation \
@@ -118,7 +135,7 @@ if [ ! -f "$SOLVER_PRED_FULL" ]; then
         --config-name='search_multiturn_grpo' \
         +ckpt_path=$SOLVER_CKPT \
         data.prompt_key=prompt \
-        +data.path=$GEN_DATA_PATH \
+        +data.path=$SAMPLED_GEN_DATA \
         +data.partition=null \
         +data.batch_size=512 \
         +data.output_path=$SOLVER_PRED_FULL \

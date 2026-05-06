@@ -72,6 +72,8 @@ def main():
                         help="full solver prediction parquet (has solver_answer + is_correct)")
     parser.add_argument("--local_dir", required=True,
                         help="output directory for train.parquet")
+    parser.add_argument("--max_samples", type=int, default=None,
+                        help="if set, stratified-sample this many rows by data_source (hop ratio preserved)")
     args = parser.parse_args()
 
     solver_pred = pd.read_parquet(args.solver_pred_path)
@@ -111,6 +113,25 @@ def main():
     print(f"[verifier_data] yes={n_yes}, no={n_no}, skipped={n_skip}")
 
     train_df = pd.DataFrame(records)
+
+    if args.max_samples and args.max_samples < len(train_df):
+        # Stratified sampling by data_source to preserve hop ratio
+        if "data_source" in train_df.columns:
+            sampled = (
+                train_df.groupby("data_source", group_keys=False)
+                .apply(lambda g: g.sample(
+                    n=max(1, round(args.max_samples * len(g) / len(train_df))),
+                    random_state=42
+                ))
+            )
+            # trim/pad to exact max_samples due to rounding
+            if len(sampled) > args.max_samples:
+                sampled = sampled.sample(n=args.max_samples, random_state=42)
+            train_df = sampled
+        else:
+            train_df = train_df.sample(n=args.max_samples, random_state=42)
+        print(f"[verifier_data] Sampled {len(train_df)} / max_samples={args.max_samples} (hop ratio preserved)")
+
     train_df = train_df.sample(frac=1, random_state=42).reset_index(drop=True)
 
     os.makedirs(args.local_dir, exist_ok=True)

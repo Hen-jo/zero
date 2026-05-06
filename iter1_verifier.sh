@@ -145,7 +145,8 @@ echo "[$(date '+%H:%M:%S')] [3/4] Verifier 학습 데이터 생성 중..."
 python "$SCRIPT_DIR/scripts/data_process/verifier_data.py" \
     --gen_data_path="$GEN_DATA_PATH" \
     --solver_pred_path="$SOLVER_PRED_FULL" \
-    --local_dir="$VERIFIER_DATA_DIR"
+    --local_dir="$VERIFIER_DATA_DIR" \
+    --max_samples=1920
 echo "[$(date '+%H:%M:%S')] [3/4] Verifier 데이터 생성 완료 → $VERIFIER_DATA_DIR"
 
 # ── [4/4] Verifier 학습 ───────────────────────────────────────────────────
@@ -192,7 +193,7 @@ python -m verl.trainer.main_ppo \
     trainer.test_freq=-1 \
     trainer.val_before_train=False \
     trainer.total_epochs=1 \
-    trainer.total_training_steps=30 $@
+    trainer.total_training_steps=15 $@
 
 # ── [5/4] Verifier HF 포맷 변환 (iter2용) ────────────────────────────────
 echo "[$(date '+%H:%M:%S')] [5/4] Verifier 체크포인트 → HF 변환 중..."

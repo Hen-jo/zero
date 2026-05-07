@@ -12,7 +12,7 @@ fuser -k 8001/tcp 2>/dev/null || true
 cur_iter=2
 prev_iter=1
 
-tp=2
+tp=1
 dp=4
 gpus=8
 batch_per_gpu=1

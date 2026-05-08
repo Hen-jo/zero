@@ -22,7 +22,7 @@ fi
 
 algorithm=grpo
 grpo_group_size=5
-solver_total_steps=30
+solver_total_steps=50
 model=/input/model/Qwen/Qwen2.5-3B-Instruct
 model_name=$(basename "$model" | tr '[:upper:]' '[:lower:]')
 
@@ -106,7 +106,7 @@ python -m verl.trainer.main_ppo \
     trainer.default_local_dir=$OUTPUT_DIR/checkpoints/dr-zero/$SOLVER_NAME \
     trainer.n_gpus_per_node=${gpus} \
     trainer.nnodes=1 \
-    trainer.save_freq=1 \
+    trainer.save_freq=25 \
     trainer.max_actor_ckpt_to_keep=1 \
     data.val_batch_size=64 \
     trainer.test_freq=-1 \

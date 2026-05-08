@@ -107,11 +107,11 @@ python -m verl.trainer.main_ppo \
     trainer.default_local_dir=$OUTPUT_DIR/checkpoints/dr-zero/$SOLVER_NAME \
     trainer.n_gpus_per_node=${gpus} \
     trainer.nnodes=1 \
-    trainer.save_freq=1 \
+    trainer.save_freq=25 \
     trainer.max_actor_ckpt_to_keep=1 \
     trainer.test_freq=-1 \
     trainer.val_before_train=False \
     trainer.validation_data_dir=${VAL_DATA_DIR} \
     trainer.total_epochs=1 \
-    trainer.total_training_steps=30 \
+    trainer.total_training_steps=50 \
     +trainer.save_last_rollout_path="$SOLVER_PRED_OUT" $@

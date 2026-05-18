@@ -35,7 +35,7 @@ model_name=$(basename "$model" | tr '[:upper:]' '[:lower:]')
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUTPUT_DIR=/input/output/zero_no2
 LOG_DIR=$OUTPUT_DIR/logs
-mkdir -p $LOG_DIR
+mkdir -p $LOG_DIR || { echo "[ERROR] LOG_DIR 생성 실패: $LOG_DIR (권한 또는 경로 확인)"; exit 1; }
 CONFIG_PATH="$SCRIPT_DIR/config"
 TOOL_CONFIG="$CONFIG_PATH/search_tool_config.yaml"
 

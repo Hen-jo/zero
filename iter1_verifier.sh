@@ -59,7 +59,7 @@ TRAIN_DATA="$VERIFIER_DATA_DIR/train.parquet"
 VAL_DATA="/input/data/Drzero/test.parquet"
     
 LOG_DIR=$OUTPUT_DIR/logs
-mkdir -p $LOG_DIR
+mkdir -p $LOG_DIR || { echo "[ERROR] LOG_DIR 생성 실패: $LOG_DIR (권한 또는 경로 확인)"; exit 1; }
 export TENSORBOARD_DIR=$OUTPUT_DIR/tensorboard
 
 wait_for_port() {

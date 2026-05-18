@@ -48,7 +48,7 @@ RESUME_PATH="$OUTPUT_DIR/checkpoints/dr-zero/solver_iter${prev_iter}_ratio${hop_
 
 
 LOG_DIR=$OUTPUT_DIR/logs
-mkdir -p $LOG_DIR
+mkdir -p $LOG_DIR || { echo "[ERROR] LOG_DIR 생성 실패: $LOG_DIR (권한 또는 경로 확인)"; exit 1; }
 export TENSORBOARD_DIR=$OUTPUT_DIR/tensorboard
 
 NFS_INDEX='/input/data/Drzero/corpus/e5_Flat.index'

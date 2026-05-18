@@ -9,9 +9,9 @@ export HF_HOME=/tmp/hf_home
 fuser -k 8000/tcp 2>/dev/null || true
 fuser -k 8001/tcp 2>/dev/null || true
 
-tp=1   # Qwen2.5-3B ≈ 6GB FP16 → A100 한 장에 충분, TP 불필요
-dp=4   # A100 4개 → dp=4 (GPU당 sglang 서버 1개)
-gpus=8
+tp=1   # Qwen2.5-3B ≈ 6GB FP16 → H100 한 장에 충분, TP 불필요
+dp=4   # H100 4개 → dp=4 (GPU당 sglang 서버 1개)
+gpus=4
 batch_per_gpu=1
 rollout_memory_utilization=0.25
 
@@ -53,6 +53,7 @@ PYTHONUNBUFFERED=1 python $SCRIPT_DIR/search/retrieval_server.py \
     --corpus_path='/input/data/Drzero/corpus/wiki-18.jsonl' \
     --retriever_model='/input/model/e5-base-v2' \
     --retriever_name='e5' \
+    --faiss_gpu \
     --topk 3 > $LOG_DIR/retrieval_server.log 2>&1 &
 RETRIEVAL_PID=$!
 

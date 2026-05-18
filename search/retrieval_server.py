@@ -59,7 +59,11 @@ def load_model(model_path: str):
     model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
     model = AutoModel.from_pretrained(model_path, trust_remote_code=True)
     model.eval()
-    print(f"[load_model] 모델 로딩 완료 (CPU 모드)", flush=True)
+    if torch.cuda.is_available():
+        model = model.cuda().half()
+        print(f"[load_model] 모델 로딩 완료 (GPU 모드, fp16)", flush=True)
+    else:
+        print(f"[load_model] 모델 로딩 완료 (CPU 모드)", flush=True)
     print(f"[load_model] tokenizer 로딩...", flush=True)
     tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=True, trust_remote_code=True)
     print(f"[load_model] tokenizer 로딩 완료", flush=True)

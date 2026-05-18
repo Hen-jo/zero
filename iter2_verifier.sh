@@ -13,8 +13,8 @@ cur_iter=2
 prev_iter=1
 
 tp=2
-dp=4
-gpus=8
+dp=2
+gpus=4
 batch_per_gpu=2
 rollout_memory_utilization=0.5
 
@@ -94,6 +94,7 @@ PYTHONUNBUFFERED=1 python $SCRIPT_DIR/search/retrieval_server.py \
     --corpus_path='/input/data/Drzero/corpus/wiki-18.jsonl' \
     --retriever_model='/input/model/e5-base-v2' \
     --retriever_name='e5' \
+    --faiss_gpu \
     --topk 3 > $LOG_DIR/retrieval_server.log 2>&1 &
 RETRIEVAL_PID=$!
 

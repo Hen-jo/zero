@@ -10,8 +10,8 @@ fuser -k 8000/tcp 2>/dev/null || true
 fuser -k 8001/tcp 2>/dev/null || true
 
 tp=2
-dp=4
-gpus=8
+dp=2
+gpus=4
 batch_per_gpu=2
 rollout_memory_utilization=0.5
 
@@ -106,6 +106,7 @@ PYTHONUNBUFFERED=1 python $SCRIPT_DIR/search/retrieval_server.py \
     --corpus_path='/input/data/Drzero/corpus/wiki-18.jsonl' \
     --retriever_model='/input/model/e5-base-v2' \
     --retriever_name='e5' \
+    --faiss_gpu \
     --topk 3 > $LOG_DIR/retrieval_server.log 2>&1 &
 RETRIEVAL_PID=$!
 wait_for_port 8000 $RETRIEVAL_PID $LOG_DIR/retrieval_server.log

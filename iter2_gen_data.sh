@@ -9,8 +9,8 @@ export HF_HOME=/tmp/hf_home
 fuser -k 8000/tcp 2>/dev/null || true
 
 tp=1
-dp=8
-gpus=8
+dp=4
+gpus=4
 sample_size=5
 rollout_memory_utilization=0.8
 
@@ -25,7 +25,7 @@ reward_group_size=5
 model=/input/model/Qwen
 model_name=$(basename "$model" | tr '[:upper:]' '[:lower:]')
 
-challenger_step=30
+challenger_step=50
 data_partition=2
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -53,6 +53,7 @@ PYTHONUNBUFFERED=1 python search/retrieval_server.py \
     --corpus_path="$NFS_CORPUS" \
     --retriever_model='/input/model/e5-base-v2' \
     --retriever_name='e5' \
+    --faiss_gpu \
     --topk 3 > $LOG_DIR/retrieval_server.log 2>&1 &
 RETRIEVAL_PID=$!
 

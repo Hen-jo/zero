@@ -29,12 +29,12 @@ model_name=$(basename "$model" | tr '[:upper:]' '[:lower:]')
 challenger_algorithm=grpo_batch
 challenger_grpo_group_size=1
 challenger_reward_group_size=5
-challenger_step=33
+challenger_step=50
 
 # Solver iter1 checkpoint (for generating verifier training data)
 solver_algorithm=grpo
 solver_grpo_group_size=5
-solver_step=30
+solver_step=50
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUTPUT_DIR=/input/output/zero_no2
@@ -82,6 +82,8 @@ wait_for_port() {
 if [ ! -f "$CHALLENGER_CKPT/config.json" ]; then
     echo "[$(date '+%H:%M:%S')] [0/4] Challenger 체크포인트 변환 중..."
     rm -rf "$CHALLENGER_CKPT"
+    [ ! -e "${EXP_DIR}/${CHALLENGER_NAME}/global_step_${challenger_step}/actor/huggingface" ] && \
+        ln -sfn "$model" "${EXP_DIR}/${CHALLENGER_NAME}/global_step_${challenger_step}/actor/huggingface"
     python -m verl.model_merger merge \
         --backend fsdp \
         --local_dir "${EXP_DIR}/${CHALLENGER_NAME}/global_step_${challenger_step}/actor" \
@@ -174,7 +176,7 @@ python -m verl.trainer.main_ppo \
     --config-name='search_multiturn_grpo' \
     data.train_files="$TRAIN_DATA" \
     data.val_files="$VAL_DATA" \
-    data.train_batch_size=128 \
+    data.train_batch_size=256 \
     data.max_prompt_length=512 \
     algorithm.use_kl_in_reward=False \
     algorithm.adv_estimator=${algorithm} \
@@ -182,7 +184,7 @@ python -m verl.trainer.main_ppo \
     actor_rollout_ref.actor.grad_clip=0.1 \
     actor_rollout_ref.actor.optim.lr=1e-6 \
     actor_rollout_ref.actor.optim.lr_warmup_steps_ratio=0.03 \
-    actor_rollout_ref.actor.ppo_mini_batch_size=128 \
+    actor_rollout_ref.actor.ppo_mini_batch_size=256 \
     actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=${batch_per_gpu} \
     actor_rollout_ref.actor.fsdp_config.param_offload=True \
     actor_rollout_ref.actor.fsdp_config.optimizer_offload=True \
@@ -206,12 +208,12 @@ python -m verl.trainer.main_ppo \
     trainer.default_local_dir=$OUTPUT_DIR/checkpoints/dr-zero/$VERIFIER_NAME \
     trainer.n_gpus_per_node=${gpus} \
     trainer.nnodes=1 \
-    trainer.save_freq=1 \
+    trainer.save_freq=25 \
     trainer.max_actor_ckpt_to_keep=1 \
-    trainer.test_freq=-1 \
+    trainer.test_freq=25 \
     trainer.val_before_train=False \
     trainer.total_epochs=1 \
-    trainer.total_training_steps=15 $@
+    trainer.total_training_steps=50 $@
 
 # ── [5/4] Verifier HF 포맷 변환 (iter2용) ────────────────────────────────
 echo "[$(date '+%H:%M:%S')] [5/4] Verifier 체크포인트 → HF 변환 중..."

@@ -22,7 +22,7 @@ fi
 
 algorithm=grpo_batch
 grpo_group_size=1
-model=/input/model/Qwen/Qwen2.5-3B-Instruct
+model=/input/model/Qwen
 model_name=$(basename "$model" | tr '[:upper:]' '[:lower:]')
 
 # Challenger iter1 checkpoint (verifier starts from here)

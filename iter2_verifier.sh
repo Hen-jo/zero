@@ -25,7 +25,7 @@ fi
 
 algorithm=grpo_batch
 grpo_group_size=1
-model=/input/model/Qwen2-5-3b-instruct
+model=/input/model/Qwen
 model_name=$(basename "$model" | tr '[:upper:]' '[:lower:]')
 
 challenger_algorithm=grpo_batch

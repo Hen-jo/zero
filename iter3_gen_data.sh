@@ -22,7 +22,7 @@ fi
 algorithm=grpo_batch
 grpo_group_size=1
 reward_group_size=5
-model=/input/model/Qwen/Qwen2.5-3B-Instruct
+model=/input/model/Qwen
 model_name=$(basename "$model" | tr '[:upper:]' '[:lower:]')
 
 challenger_step=30

@@ -10,7 +10,7 @@ hop_ratio=${1:-4321}
 algorithm=grpo
 grpo_group_size=5
 solver_total_steps=30
-model=/input/model/Qwen/Qwen2.5-3B-Instruct
+model=/input/model/Qwen
 model_name=$(basename "$model" | tr '[:upper:]' '[:lower:]')
 
 OUTPUT_DIR=/input/output/zero_no2

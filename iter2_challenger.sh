@@ -46,6 +46,7 @@ VAL_DATA="/input/data/Drzero/test.parquet"
 SOLVER_NAME="solver_hf"
 CHALLENGER_NAME="challenger_iter${cur_iter}_ratio${hop_ratio}_${algorithm}_group${grpo_group_size}-${reward_group_size}_${model_name}"
 SOLVER_PATH="$OUTPUT_DIR/checkpoints/dr-zero/solver_iter${prev_iter}_ratio${hop_ratio}_${solver_algorithm}_group${solver_grpo_group_size}_${model_name}/${SOLVER_NAME}"
+VERIFIER_PREV_HF="$OUTPUT_DIR/checkpoints/dr-zero/verifier_iter${prev_iter}_ratio${hop_ratio}_${algorithm}_group${grpo_group_size}_${model_name}/verifier_iter${prev_iter}_hf"
 
 
 export TENSORBOARD_DIR=$OUTPUT_DIR/tensorboard
@@ -100,7 +101,7 @@ python -m verl.trainer.main_ppo \
     data.train_batch_size=256 \
     algorithm.use_kl_in_reward=False \
     algorithm.adv_estimator=${algorithm} \
-    actor_rollout_ref.model.path=${model} \
+    actor_rollout_ref.model.path=${VERIFIER_PREV_HF} \
     actor_rollout_ref.actor.grad_clip=0.1 \
     actor_rollout_ref.actor.optim.lr=1e-6 \
     actor_rollout_ref.actor.optim.lr_warmup_steps_ratio=0.03 \

@@ -7,7 +7,7 @@ exp_name=${3:-""}
 
 algorithm=grpo_batch
 grpo_group_size=1
-model=/input/model/Qwen/Qwen2.5-3B-Instruct
+model=/input/model/Qwen
 model_name=$(basename "$model" | tr '[:upper:]' '[:lower:]')
 
 OUTPUT_DIR=/input/output/zero_no2
@@ -30,6 +30,7 @@ ACTOR_DIR="$CKPT_BASE/$LATEST_STEP/actor"
 echo "[INFO] iter=${iter}, step=${LATEST_STEP}, verifier actor=${ACTOR_DIR}"
 echo "[INFO] target=${TARGET_DIR}"
 
+[ ! -e "$ACTOR_DIR/huggingface" ] && ln -sfn "$model" "$ACTOR_DIR/huggingface"
 python -m verl.model_merger merge \
     --backend fsdp \
     --local_dir "$ACTOR_DIR" \

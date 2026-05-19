@@ -70,6 +70,8 @@ VERIFIER_DATA_DIR="$OUTPUT_DIR/data/verifier_${CHALLENGER_NAME}"
 if [ ! -f "$CHALLENGER_CKPT/config.json" ]; then
     echo "[$(date '+%H:%M:%S')] [0/4] Challenger 체크포인트 변환 중..."
     rm -rf "$CHALLENGER_CKPT"
+    [ ! -e "${EXP_DIR}/${CHALLENGER_NAME}/global_step_${challenger_step}/actor/huggingface" ] && \
+        ln -sfn "$model" "${EXP_DIR}/${CHALLENGER_NAME}/global_step_${challenger_step}/actor/huggingface"
     python -m verl.model_merger merge \
         --backend fsdp \
         --local_dir "${EXP_DIR}/${CHALLENGER_NAME}/global_step_${challenger_step}/actor" \
@@ -138,7 +140,7 @@ python -m verl.trainer.main_ppo \
     data.max_prompt_length=512 \
     algorithm.use_kl_in_reward=False \
     algorithm.adv_estimator=${algorithm} \
-    actor_rollout_ref.model.path=$RESUME_PATH \
+    actor_rollout_ref.model.path=$CHALLENGER_CKPT \
     actor_rollout_ref.actor.grad_clip=0.1 \
     actor_rollout_ref.actor.optim.lr=1e-6 \
     actor_rollout_ref.actor.optim.lr_warmup_steps_ratio=0.03 \

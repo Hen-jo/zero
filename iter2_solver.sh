@@ -44,7 +44,7 @@ VAL_DATA="/input/data/Drzero/test.parquet"
 VAL_DATA_DIR="$OUTPUT_DIR/data/${SOLVER_NAME}"
 SOLVER_PRED_OUT="$OUTPUT_DIR/data/solver_pred_${SOLVER_NAME}.parquet"
 
-RESUME_PATH="$OUTPUT_DIR/checkpoints/dr-zero/solver_iter${prev_iter}_ratio${hop_ratio}_${algorithm}_group${grpo_group_size}_${model_name}/solver_iter${prev_iter}_hf"
+RESUME_PATH="$OUTPUT_DIR/checkpoints/dr-zero/solver_iter${prev_iter}_ratio${hop_ratio}_${algorithm}_group${grpo_group_size}_${model_name}/solver_hf"
 
 
 LOG_DIR=$OUTPUT_DIR/logs
@@ -116,3 +116,16 @@ python -m verl.trainer.main_ppo \
     trainer.total_epochs=1 \
     trainer.total_training_steps=50 \
     +trainer.save_last_rollout_path="$SOLVER_PRED_OUT" $@
+
+# ── Solver HF 포맷 변환 (iter3용) ─────────────────────────────
+SOLVER_CKPT=$(ls -d "${OUTPUT_DIR}/checkpoints/dr-zero/${SOLVER_NAME}/global_step_"* 2>/dev/null | sort -t_ -k3 -n | tail -1)
+SOLVER_HF_OUT="${OUTPUT_DIR}/checkpoints/dr-zero/${SOLVER_NAME}/solver_iter${cur_iter}_hf"
+if [ -n "$SOLVER_CKPT" ] && [ ! -f "$SOLVER_HF_OUT/config.json" ]; then
+    echo "[$(date '+%H:%M:%S')] Solver HF 변환 중..."
+    [ ! -e "${SOLVER_CKPT}/actor/huggingface" ] && ln -sfn "$model" "${SOLVER_CKPT}/actor/huggingface"
+    python -m verl.model_merger merge \
+        --backend fsdp \
+        --local_dir "${SOLVER_CKPT}/actor" \
+        --target_dir "$SOLVER_HF_OUT"
+    echo "[$(date '+%H:%M:%S')] Solver HF 변환 완료: $SOLVER_HF_OUT"
+fi

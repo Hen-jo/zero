@@ -125,6 +125,7 @@ SOLVER_HF_CKPT="${OUTPUT_DIR}/checkpoints/dr-zero/${SOLVER_NAME}/solver_hf"
 if [ ! -f "$SOLVER_HF_CKPT/config.json" ]; then
     echo "[$(date '+%H:%M:%S')] Solver 체크포인트 → HF 변환 중..."
     rm -rf "$SOLVER_HF_CKPT"
+    [ ! -e "${SOLVER_CKPT}/actor/huggingface" ] && ln -sfn "$model" "${SOLVER_CKPT}/actor/huggingface"
     python -m verl.model_merger merge \
         --backend fsdp \
         --local_dir "${SOLVER_CKPT}/actor" \

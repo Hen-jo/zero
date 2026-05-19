@@ -167,7 +167,7 @@ python -m verl.trainer.main_ppo \
     trainer.n_gpus_per_node=${gpus} \
     trainer.nnodes=1 \
     trainer.save_freq=25 \
-    trainer.test_freq=25 \
+    trainer.test_freq=-1 \
     trainer.val_before_train=False \
     trainer.total_training_steps=50 \
     trainer.total_epochs=1 $@

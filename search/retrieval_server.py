@@ -54,19 +54,16 @@ def load_docs(corpus, doc_idxs):
     return results
 
 
-def load_model(model_path: str):
+def load_model(model_path: str, use_fp16: bool = False):
     print(f"[load_model] AutoModel.from_pretrained 시작: {model_path}", flush=True)
     model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
     model = AutoModel.from_pretrained(model_path, trust_remote_code=True)
     model.eval()
-    if torch.cuda.is_available():
-        model = model.cuda().half()
-        print(f"[load_model] 모델 로딩 완료 (GPU 모드, fp16)", flush=True)
-    else:
-        print(f"[load_model] 모델 로딩 완료 (CPU 모드)", flush=True)
-    print(f"[load_model] tokenizer 로딩...", flush=True)
+    model.cuda()
+    if use_fp16:
+        model = model.half()
+    print(f"[load_model] 모델 로딩 완료 (fp16={use_fp16})", flush=True)
     tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=True, trust_remote_code=True)
-    print(f"[load_model] tokenizer 로딩 완료", flush=True)
     return model, tokenizer
 
 
@@ -95,7 +92,7 @@ class Encoder:
         self.max_length = max_length
         self.use_fp16 = use_fp16
 
-        self.model, self.tokenizer = load_model(model_path=model_path)
+        self.model, self.tokenizer = load_model(model_path=model_path, use_fp16=use_fp16)
         self.model.eval()
 
     @torch.no_grad()
@@ -240,12 +237,12 @@ class DenseRetriever(BaseRetriever):
         self.index = faiss.read_index(self.index_path)
         print(f"[DenseRetriever] FAISS 인덱스 로딩 완료", flush=True)
         if config.faiss_gpu:
-            print("[DenseRetriever] FAISS 인덱스 GPU 0 전송 중...", flush=True)
-            # shard=True(all_gpus)는 training과 GPU 공유 시 cuBLAS workspace 경쟁으로 실패
-            # → 단일 GPU(0)만 사용해 간섭 최소화
-            res = faiss.StandardGpuResources()
-            self.index = faiss.index_cpu_to_gpu(res, 0, self.index)
-            print("[DenseRetriever] FAISS GPU 0 전송 완료", flush=True)
+            print("[DenseRetriever] FAISS 인덱스 GPU 전송 중...", flush=True)
+            co = faiss.GpuMultipleClonerOptions()
+            co.useFloat16 = True
+            co.shard = True
+            self.index = faiss.index_cpu_to_all_gpus(self.index, co=co)
+            print("[DenseRetriever] FAISS GPU 전송 완료", flush=True)
 
         print(f"[DenseRetriever] corpus 로딩: {self.corpus_path}", flush=True)
         self.corpus = load_corpus(self.corpus_path)

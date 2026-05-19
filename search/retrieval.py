@@ -244,10 +244,8 @@ class DenseRetriever(BaseRetriever):
         super().__init__(config)
         self.index = faiss.read_index(self.index_path)
         if config.faiss_gpu:
-            co = faiss.GpuMultipleClonerOptions()
-            co.useFloat16 = False  # H100 80GB: fp32 충분, fp16은 cuBLAS gemm 실패 가능
-            co.shard = True
-            self.index = faiss.index_cpu_to_all_gpus(self.index, co=co)
+            res = faiss.StandardGpuResources()
+            self.index = faiss.index_cpu_to_gpu(res, 0, self.index)
 
         self.corpus = load_corpus(self.corpus_path)
         self.encoder = Encoder(

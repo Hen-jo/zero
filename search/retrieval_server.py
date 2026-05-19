@@ -240,12 +240,12 @@ class DenseRetriever(BaseRetriever):
         self.index = faiss.read_index(self.index_path)
         print(f"[DenseRetriever] FAISS 인덱스 로딩 완료", flush=True)
         if config.faiss_gpu:
-            print("[DenseRetriever] FAISS 인덱스 GPU 전송 중...", flush=True)
-            co = faiss.GpuMultipleClonerOptions()
-            co.useFloat16 = False  # H100 80GB: fp32 충분, fp16은 cuBLAS gemm 실패 가능
-            co.shard = True
-            self.index = faiss.index_cpu_to_all_gpus(self.index, co=co)
-            print("[DenseRetriever] FAISS GPU 전송 완료", flush=True)
+            print("[DenseRetriever] FAISS 인덱스 GPU 0 전송 중...", flush=True)
+            # shard=True(all_gpus)는 training과 GPU 공유 시 cuBLAS workspace 경쟁으로 실패
+            # → 단일 GPU(0)만 사용해 간섭 최소화
+            res = faiss.StandardGpuResources()
+            self.index = faiss.index_cpu_to_gpu(res, 0, self.index)
+            print("[DenseRetriever] FAISS GPU 0 전송 완료", flush=True)
 
         print(f"[DenseRetriever] corpus 로딩: {self.corpus_path}", flush=True)
         self.corpus = load_corpus(self.corpus_path)

@@ -15,7 +15,7 @@ prev_iter=2
 tp=2
 dp=2
 gpus=4
-batch_per_gpu=1
+batch_per_gpu=2
 rollout_memory_utilization=0.25
 
 solver_algorithm=grpo

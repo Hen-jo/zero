@@ -12,7 +12,7 @@ fuser -k 8001/tcp 2>/dev/null || true
 tp=1   # Qwen2.5-3B ≈ 6GB FP16 → H100 한 장에 충분, TP 불필요
 dp=4   # H100 4개 → dp=4 (GPU당 sglang 서버 1개)
 gpus=4
-batch_per_gpu=1
+batch_per_gpu=2
 rollout_memory_utilization=0.25
 
 hop_ratio=${1:-4321}

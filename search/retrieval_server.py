@@ -239,7 +239,7 @@ class DenseRetriever(BaseRetriever):
         if config.faiss_gpu:
             print("[DenseRetriever] FAISS 인덱스 GPU 전송 중...", flush=True)
             co = faiss.GpuMultipleClonerOptions()
-            co.useFloat16 = True
+            co.useFloat16 = False  # H100: cublasLt fp16 workspace 부족 → fp32
             co.shard = True
             self.index = faiss.index_cpu_to_all_gpus(self.index, co=co)
             print("[DenseRetriever] FAISS GPU 전송 완료", flush=True)

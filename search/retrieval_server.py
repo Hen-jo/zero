@@ -335,7 +335,8 @@ class Config:
         retrieval_pooling_method: str = "mean",
         retrieval_query_max_length: int = 256,
         retrieval_use_fp16: bool = False,
-        retrieval_batch_size: int = 128
+        retrieval_batch_size: int = 128,
+        max_queries_per_call: int = 5
     ):
         self.retrieval_method = retrieval_method
         self.retrieval_topk = retrieval_topk
@@ -349,6 +350,7 @@ class Config:
         self.retrieval_query_max_length = retrieval_query_max_length
         self.retrieval_use_fp16 = retrieval_use_fp16
         self.retrieval_batch_size = retrieval_batch_size
+        self.max_queries_per_call = max_queries_per_call
 
 
 class QueryRequest(BaseModel):
@@ -364,13 +366,16 @@ config = None
 @app.post("/retrieve")
 def retrieve_endpoint(request: QueryRequest):
     topk = request.topk if request.topk else config.retrieval_topk
-    n_queries = len(request.queries)
-    logger.info(f"[retrieve] n_queries={n_queries} topk={topk} queries={request.queries[:2]}")
+    queries = request.queries[:config.max_queries_per_call]
+    n_queries = len(queries)
+    if len(request.queries) > config.max_queries_per_call:
+        logger.warning(f"[retrieve] query_list truncated {len(request.queries)} → {n_queries}")
+    logger.info(f"[retrieve] n_queries={n_queries} topk={topk} queries={queries[:2]}")
 
     t0 = time.time()
     try:
         results, scores = retriever.batch_search(
-            query_list=request.queries,
+            query_list=queries,
             num=topk,
             return_score=request.return_scores
         )
@@ -402,6 +407,7 @@ if __name__ == "__main__":
     parser.add_argument("--retriever_name", type=str, default="e5", help="Name of the retriever model.")
     parser.add_argument("--retriever_model", type=str, default="intfloat/e5-base-v2", help="Path of the retriever model.")
     parser.add_argument('--faiss_gpu', action='store_true', help='Use GPU for computation')
+    parser.add_argument('--max_queries_per_call', type=int, default=5, help='Max queries per retrieve call (4hop max → 5)')
 
     args = parser.parse_args()
 
@@ -416,6 +422,7 @@ if __name__ == "__main__":
         retrieval_query_max_length=256,
         retrieval_use_fp16=True,
         retrieval_batch_size=512,
+        max_queries_per_call=args.max_queries_per_call,
     )
     retriever = get_retriever(config)
 

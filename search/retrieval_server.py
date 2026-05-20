@@ -370,7 +370,7 @@ def retrieve_endpoint(request: QueryRequest):
     n_queries = len(queries)
     if len(request.queries) > config.max_queries_per_call:
         logger.warning(f"[retrieve] query_list truncated {len(request.queries)} → {n_queries}")
-    logger.info(f"[retrieve] n_queries={n_queries} topk={topk} queries={queries[:2]}")
+    logger.debug(f"[retrieve] n_queries={n_queries} topk={topk} queries={queries[:2]}")
 
     t0 = time.time()
     try:
@@ -384,7 +384,7 @@ def retrieve_endpoint(request: QueryRequest):
         raise
 
     elapsed = time.time() - t0
-    logger.info(f"[retrieve] done in {elapsed:.2f}s, returned {len(results)} results")
+    logger.debug(f"[retrieve] done in {elapsed:.2f}s, returned {len(results)} results")
 
     resp = []
     for i, single_result in enumerate(results):

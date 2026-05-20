@@ -265,7 +265,7 @@ class SearchTool(BaseTool):
             status = metadata.get("status", "unknown")
             n_results = metadata.get("total_results", 0)
             preview = result_text[:120] if result_text else "(empty)"
-            print(f"[SEARCH] queries={query_list_from_params} status={status} n_results={n_results} preview={preview!r}", flush=True)
+            logger.debug(f"[SEARCH] queries={query_list_from_params} status={status} n_results={n_results} preview={preview!r}")
 
             # Convert metadata to metrics
             metrics = {

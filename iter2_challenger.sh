@@ -17,7 +17,7 @@ dp=4
 gpus=4
 batch_per_gpu=2
 rollout_memory_utilization=0.25
-reward_memory_utilization=0.25
+reward_memory_utilization=0.15
 
 solver_algorithm=grpo
 solver_grpo_group_size=5

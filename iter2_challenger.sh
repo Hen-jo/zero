@@ -17,7 +17,6 @@ dp=4
 gpus=4
 batch_per_gpu=2
 rollout_memory_utilization=0.25
-reward_memory_utilization=0.15
 
 solver_algorithm=grpo
 solver_grpo_group_size=5
@@ -84,7 +83,7 @@ python -m sglang.launch_server \
     --served-model-name=$SOLVER_NAME \
     --port=8001 \
     --tool-call-parser=qwen25 \
-    --mem-fraction-static=${reward_memory_utilization} \
+    --mem-fraction-static=${rollout_memory_utilization} \
     --dp-size=${dp} \
     --tp-size=${tp} \
     --log-level=error > $LOG_DIR/sglang_server.log 2>&1 &

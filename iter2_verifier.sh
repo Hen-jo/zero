@@ -204,7 +204,7 @@ python -m verl.trainer.main_ppo \
     trainer.logger='["console", "tensorboard"]' \
     trainer.project_name="dr-zero" \
     trainer.experiment_name=$VERIFIER_NAME \
-    trainer.default_local_dir=$OUTPUT_DIR/checkpoints \
+    trainer.default_local_dir=$OUTPUT_DIR/checkpoints/dr-zero/$VERIFIER_NAME \
     trainer.n_gpus_per_node=${gpus} \
     trainer.nnodes=1 \
     trainer.save_freq=25 \

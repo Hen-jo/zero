@@ -23,8 +23,8 @@ if [ $# -ge 1 ]; then
     shift
 fi
 
-algorithm=grpo
-grpo_group_size=5
+algorithm=grpo_batch
+grpo_group_size=1
 model=/input/model/Qwen
 model_name=$(basename "$model" | tr '[:upper:]' '[:lower:]')
 
@@ -169,21 +169,8 @@ python "$SCRIPT_DIR/scripts/data_process/verifier_data.py" \
     --max_samples=12800
 echo "[$(date '+%H:%M:%S')] [3/5] Verifier 데이터 생성 완료 → $VERIFIER_DATA_DIR"
 
-# ── [4/5] sglang 시작 ────────────────────────────────────────────────────
-echo "[$(date '+%H:%M:%S')] [4/5] sglang 시작..."
-python -m sglang.launch_server \
-    --model=${model} \
-    --port=8001 \
-    --tool-call-parser=qwen25 \
-    --mem-fraction-static=${rollout_memory_utilization} \
-    --dp-size=${dp} \
-    --tp-size=${tp} \
-    --log-level=error > $LOG_DIR/sglang_server.log 2>&1 &
-SGLANG_PID=$!
-wait_for_port 8001 $SGLANG_PID $LOG_DIR/sglang_server.log
-
-# ── [5/5] Verifier 학습 ───────────────────────────────────────────────────
-echo "[$(date '+%H:%M:%S')] [5/5] Verifier 학습 시작: ${VERIFIER_NAME}"
+# ── [4/5] Verifier 학습 ───────────────────────────────────────────────────
+echo "[$(date '+%H:%M:%S')] [4/5] Verifier 학습 시작: ${VERIFIER_NAME}"
 python -m verl.trainer.main_ppo \
     --config-path="$CONFIG_PATH" \
     --config-name='search_multiturn_grpo' \
@@ -211,6 +198,7 @@ python -m verl.trainer.main_ppo \
     actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu=${batch_per_gpu} \
     actor_rollout_ref.actor.use_kl_loss=False \
     actor_rollout_ref.rollout.multi_turn.tool_config_path=$TOOL_CONFIG \
+    reward_model.reward_manager=batch \
     custom_reward_function.name=compute_verifier_score \
     custom_reward_function.path=verl/custom_reward/verifier_reward_function.py \
     trainer.logger='["console", "tensorboard"]' \

@@ -1,0 +1,191 @@
+LLM Feedback by Program Chairs
+LLM Feedbackby Program Chairs05 May 2026, 17:04Conference, Authors
+Feedback:
+Hello!
+
+You requested a review of your paper submitted to NeurIPS using the Google Paper Assistant Tool (PAT). The resulting AI Feedback can be found below. Note that this feedback is posted automatically, and is only visible to authors. Importantly, the feedback will not be used in the review process. Reviewers, area chairs, and program committee members will not have access to the PAT feedback.
+
+Disclaimer: Please note that the models used by the PAT pipeline are not infallible; they may hallucinate and make mistakes. Authors should treat the generated feedback with the same critical eye they would apply to a human review.
+
+Summary
+The paper proposes a novel automated curriculum learning framework for multi-hop question answering by refining the proposer's reward signal in a self-play setup. Existing self-play methods often reward the question proposer based purely on the solver's pass rate, which can lead to the generation of superficially difficult, unanswerable, or logically incomplete questions. To address this bottleneck, the authors introduce a backward verifier that traces the reasoning steps in reverse to ensure the generated questions are logically consistent and grounded in retrieved evidence. This delayed verification score is incorporated into the proposer's Hop-Grouped Relative Policy Optimization (HRPO) objective. The authors demonstrate that their approach yields consistent Exact Match (EM) improvements across several single-hop and multi-hop QA benchmarks compared to baselines.
+
+Strengths
+High significance and solid motivation: The paper addresses a critical bottleneck in data-free self-evolution and reinforcement learning from AI feedback (RLAIF)—reward hacking by the proposer. By ensuring questions are 'verifiably difficult,' the method improves the stability and quality of synthetic training curricula.
+
+Novel integration of backward verification: While backward reasoning is a known concept, creatively repurposing it as a delayed reward signal for the proposer in an iterative self-play reinforcement learning loop is a novel and highly effective architectural contribution.
+
+Consistent empirical gains: The proposed method demonstrates consistent performance improvements across a wide range of single-hop and multi-hop QA benchmarks, effectively preventing the early curriculum saturation observed in standard self-play loops.
+
+Practical evaluation metrics: The introduction of the Hop Necessity Rate (HNR) and LLM-based validity scoring provides valuable, quantifiable mechanisms to measure whether generated questions genuinely require multi-step reasoning, directly addressing the well-known 'shortcut reasoning' problem.
+
+Weaknesses
+The abstract contains an unfilled placeholder ('improving exact match by [X]%') on line 18. Please consider updating this with the correct quantitative result prior to publication.
+
+There is a chronological ambiguity in the training loop description (lines 124-126). The text states the proposer is updated 'first' using the HRPO reward, and the generated questions are 'then' used to train the solver. Since the difficulty reward depends on the solver's pass rate over the generated questions, it is mathematically unclear how the proposer can be updated before the solver interacts with those questions. Clarifying this sequence would improve reproducibility.
+
+The verifier training process lacks crucial details. Section 3.5 outlines the four stages of the self-play loop but omits when the backward verifier is actually trained. If the verifier is trained on the solver rollouts from iteration 
+ and then used to evaluate those exact same rollouts to compute the grading-quality score, this could introduce a data leakage risk. Furthermore, the authors might want to clarify whether the verifier is re-trained from scratch or continually updated across iterations.
+
+There appears to be a significant structural discrepancy between the verifier's training and inference prompts. The inference prompt (Appendix C.1) strictly instructs the model to 'Verify by reasoning BACKWARD', whereas the GRPO training prompt (Appendix C.2) provides a generic forward verification instruction without any backward-specific directives. This introduces an unexplained distribution shift that should be addressed.
+
+The hyperparameter 
+, which controls the strength of the verification bonus in the proposer reward (Equation on line 207), is neither assigned a specific value in the text nor ablated to show the framework's sensitivity to its tuning. Providing this value is important for reproducibility.
+
+The mathematical notation is inconsistent. In Sections 3.1 and 3.2, 
+ is defined as the number of factual hops and 
+ as the number of solver rollouts. However, in Sections 3.3 and 3.4, 
+ is overloaded to represent the number of solver rollouts (e.g., ${\hat{y}{i,m}}{m=1}^n
+K$. Unifying this notation would greatly enhance readability.
+
+The Hop Necessity Rate (HNR) definition presents a mathematical contradiction. The generation prompt (Appendix B) specifies that an 
+-hop question requires exactly 
+ searches. However, the HNR formula (line 296) assumes 
+ searches, defining the union of passages before the final hop as $\mathcal{R}{<n}(q) = \bigcup{k=1}^{n-1} \mathcal{R}_k(q)$. Additionally, because HNR relies on a strict exact-match heuristic, it risks falsely penalizing genuine multi-hop questions if the answer string incidentally appears in an intermediate context. The authors might consider discussing this limitation.
+
+The claim that 'improvements are most pronounced on multi-hop benchmarks' (line 259) is not fully supported by Table 1. The average absolute EM gain over the DrZero baseline is actually higher on single-hop datasets (+0.030) than on multi-hop datasets (+0.0175). Furthermore, the non-self-play Search-R1 baseline actually outperforms the proposed method on two of the four multi-hop datasets (2Wiki and BGL) (Reference Paper: Search-R1: Training LLMs to Reason and Leverage Search Engines with Reinforcement Learning, 2025). The evaluation section would benefit from a more nuanced contextualization of these specific results.
+
+The LLM Judge evaluation lacks necessary context in the prompt. Section 5.2 claims the judges evaluate a triple consisting of a question, a generation trace, and a gold answer. However, the User Prompt Template in Appendix D.2 only provides placeholders for {question} and {answer}, omitting the generation trace and retrieved evidence. Without this context, it is unclear how the judges can accurately evaluate empirical grounding.
+
+The compute-matched baseline in Section 5.3 allocates all additional compute exclusively to the baseline's solver. However, the proposed method also incurs computational overhead from the verifier's inference phase and an additional proposer HRPO update. A more rigorous control would match total algorithm compute and allocate additional optimization steps to the baseline's proposer to properly isolate the benefit of the backward verification signal.
+
+The paper does not provide a direct evaluation of the backward verifier's standalone accuracy (e.g., precision/recall compared to human annotations) or an accounting of the wall-clock time and token overhead introduced by the verification step.
+
+The manuscript currently lacks dedicated sections for Limitations and Broader Impacts. While the authors transparently acknowledge this in the NeurIPS checklist and plan to add them, incorporating these discussions into the main text or appendix is necessary to meet standard conference guidelines.
+
+Several references in the bibliography contain malformed author names (e.g., initials appearing instead of surnames for 'K. T. et al.', 'J. M. et al.', 'M. A. et al.') and the publication year is missing for the 'Absolute zero' reference. Please consider reviewing the BibTeX entries for accuracy.
+
+Potential Issues And Suggestions
+[Introduction and Background] (Pages: 1-3)
+1. Potential Mistakes and Improvements:
+
+Unfilled Placeholder in Abstract: The abstract contains an unfilled placeholder for the primary quantitative result on line 18: "...improving exact match by [X]%." This should be updated with the correct value derived from the experimental results before publication.
+
+Chronological Ambiguity in the Training Loop: The method overview (lines 124-126) describes a sequence where the proposer is "first" updated using the standard HRPO reward, and the generated questions are "then" used to train the solver. Because the standard difficulty reward typically depends on the solver's pass rate over the generated questions, it is mathematically unclear how the proposer can be updated before the solver interacts with the questions. The text should clarify whether the solver generates an initial set of inference rollouts strictly to grade the proposer prior to the solver's own GRPO training update.
+
+Missing Verifier Training Details in Overview: The related work section states that the authors "train a dedicated verifier over solver predictions" (lines 113-114). However, the high-level method overview of the self-play loop (lines 123-128) only mentions that the pipeline will "run backward verification," completely omitting the verifier's training step. Clarifying when the verifier is trained and what data it is trained on (within the overview of the iterative loop) would improve reproducibility and methodological clarity.
+
+2. Minor Corrections and Typos:
+
+Inconsistent Naming Convention: The base self-play method is capitalized inconsistently in the text. It appears as "DrZero" on line 98, but as "DR-Zero" on line 135. Standardizing the capitalization would improve consistency.
+[Proposed Methodology and Prompts] (Pages: 3-6, 14-16)
+1. Potential Mistakes and Improvements:
+
+Ambiguity in Verifier Training Sequence and Potential Data Leakage (Process Clarity & Validity): Section 3.5 outlines the "Overall training procedure" in four explicit stages per self-play iteration. However, it entirely omits the training step for the backward verifier. Section 4.1 (Line 240) and Appendix C.2 (Line 596) indicate that the verifier is actively trained with GRPO on solver rollouts. It is critical to clarify when this training occurs within the loop. If the verifier is trained on the solver rollouts from iteration 
+ and then used to evaluate those exact same rollouts to compute the grading-quality score 
+ in Stage 3, it would be evaluated on its own training set. This poses a potential data leakage risk that could artificially inflate the proposer's reward due to the verifier overfitting.
+
+Inconsistent Mathematical Notation and Variable Shadowing (Clarity): The mathematical notation shifts inconsistently midway through Section 3, hindering readability. Sections 3.1 and 3.2 define the generated question as 
+, the gold answer as 
+, the candidate answer as 
+, and the number of solver rollouts as 
+. Sections 3.3 and 3.4 redefine these identical concepts as 
+, 
+, $\hat{y}{i,m}
+n
+n
+n
+{\hat{y}{i,m}}_{m=1}^n$). Unifying this notation would resolve the mathematical conflict.
+
+Discrepancy Between Verifier Prompts (Design Rationale & Reproducibility): In Appendix C, the Inference Prompt (C.1) explicitly instructs the model to "Verify by reasoning BACKWARD: start from the candidate answer and trace each hop in reverse". However, the Training Prompt (C.2) provides a generic verification instruction ("conduct reasoning... if you need to look up information... call a search engine") with no mention of backward reasoning. It is unclear why the verifier would be trained using a prompt that omits the core backward-tracing instruction it is expected to follow during evaluation (Stage 3), as this introduces an unexplained distribution shift between training and evaluation.
+
+Missing Hyperparameter Value for 
+ (Reproducibility): The formula for the backward-verified proposer reward (Lines 207-208, 227) introduces the parameter 
+ to control the strength of the verification bonus. The specific value of 
+ (or the procedure used to tune it) is not documented in the main text, Section 4.1, or the appendices, which limits the ability to independently reproduce the reward scaling.
+
+2. Minor Corrections and Typos:
+
+Prompt Casing Mismatch: In the Inference Prompt (Appendix C.1, Lines 592-593), the verifier is instructed to output its final judgment as <answer>YES</answer> or <answer>NO</answer> in all uppercase. Conversely, the Training Prompt (Appendix C.2, Lines 606-607) instructs the verifier to output <answer>yes</answer> or <answer>no</answer> in lowercase. Standardizing the casing would prevent potential strict-matching parsing failures.
+
+Undefined Notation: In Equation 215, the notation 
+ is used in the expectations and variance calculations (e.g., 
+) but is not formally defined in the text, although context implies it represents the index set of generated questions with hop count 
+.
+
+[Experiments and Analysis] (Pages: 6-9, 16-18)
+1. Potential Mistakes and Improvements
+Unsupported Claims Regarding Multi-Hop Performance vs. Baselines (Robustness & Generalization):
+
+Section 5.1 (Line 259) claims that "The improvements are most pronounced on multi-hop benchmarks." However, compared to the base DrZero self-play loop, the average absolute Exact Match (EM) gain on the three single-hop datasets (+0.030) is actually larger than the average gain on the four multi-hop datasets (+0.0175).
+Additionally, Section 5.1 (Lines 269–272) asserts that outperforming the Search-R1 baseline's overall average EM indicates "generalization benefits beyond training the solver on a fixed question distribution." However, Table 1 reveals that this higher overall average is driven entirely by single-hop performance. On the four targeted multi-hop benchmarks, the fixed-distribution Search-R1 baseline actually outperforms the proposed method on two datasets (2Wiki: 0.336 vs. 0.300; BGL: 0.315 vs. 0.230), ties on one (MSQ: 0.105), and underperforms on only one (HQA: 0.308 vs. 0.315). The evaluation should accurately acknowledge and contextualize this performance deficit on the multi-hop tasks.
+Mathematical Inconsistency in Hop Necessity Rate (HNR) Formula (Correctness): There is a contradiction between the number of searches defined in the prompt and the HNR equation (Line 296). Appendix B (Line 535) explicitly specifies that an 
+-hop question requires "exactly 
+ searches." This means the final retrieval step that yields the answer is $\mathcal{R}{n-1}
+n$ searches, defining the union of passages before the final hop as $\mathcal{R}{<n}(q) = \bigcup_{k=1}^{n-1} \mathcal{R}_k(q)
+\mathcal{R}n
+n-1
+\bigcup{k=1}^{n-1} \mathcal{R}k(q)
+a^* \in \mathcal{R}{<n}(q)$ and wrongly fail the HNR check. The formal definition and text should be reconciled with the generation prompt's definition of hops.
+
+Missing Context in LLM Judge Prompts (Ablation & Attribution): Section 5.2 (Lines 283–286) states that the LLM judges evaluate "a generated triple consisting of a question 
+, a multi-hop generation trace, and a synthesized gold answer 
+" to verify whether each reasoning hop is "grounded in retrieved evidence." However, the User Prompt Template provided in Appendix D.2 (Lines 622–629) only provides placeholders for {question} and {answer}. Because the generation trace and retrieved evidence are completely omitted from the prompt, the LLM judges cannot objectively evaluate the verifiability of the reasoning hops as required by the rubric, invalidating the LLM-Valid metric as an assessment of empirical grounding.
+
+Incomplete Compute-Matched Ablation (Ablation & Attribution): In Section 5.3 (Lines 307–310), the compute-matched baseline (DrZero†) is constructed by giving the solver additional training steps to match the "verifier training cost." However, the proposed iterative loop also introduces computational overhead from the backward verifier's inference phase (generating reasoning traces across 
+ rollouts per question) and an additional Proposer parameter update using HRPO (Line 227). Furthermore, allocating all matched compute exclusively to the baseline's solver leaves its proposer under-optimized compared to the proposed method. A more rigorous control would ensure total algorithm compute is matched and allocate additional optimization steps to the baseline's proposer to properly isolate the benefit of the backward verification signal.
+
+Verifier Prompt Distribution Shift (Robustness): There is a structural discrepancy between the verifier's training and inference prompts. The inference prompt (Appendix C.1, Line 586) strictly constrains the verifier to "Verify by reasoning BACKWARD: start from the candidate answer and trace each hop in reverse." In contrast, the GRPO training prompt (Appendix C.2, Lines 599–607) only provides a general forward verification instruction ("conduct reasoning... to verify the answer") without any backward-specific directives. Training the verifier via RL on a generic prompt while evaluating it on a highly constrained, backward-reasoning prompt introduces a distribution shift that is not ablated or addressed.
+
+Missing Critical Hyperparameter (Reproducibility): The backward-verified proposer reward (Line 207) relies on a hyperparameter 
+ to control the strength of the verification bonus. However, the specific value, schedule, or tuning process used for 
+ in the experiments is omitted from the main text and appendices.
+
+2. Minor Corrections and Typos
+Table 1 Baseline Categorization: The first block of baselines is labeled "Non-retrieval / supervised," but it includes RAG and IRCoT, both of which explicitly use retrieval. A label such as "Non-RL / supervised" would be more accurate.
+
+Missing Baseline Citation: In Section 4.2 (Line 248) and Table 1, "SQLM*" is introduced as a baseline, but no reference citation or acronym expansion is provided.
+
+Notation Collision (
+ vs. 
+): In Section 3.1 (Line 137), 
+ denotes the target number of hops, and in Section 3.2 (Line 143), 
+ denotes the number of solver rollouts. However, in Sections 3.3 and 3.4 (e.g., Lines 192 and 207), 
+ is incorrectly reused to denote the number of solver rollouts (e.g., 
+ 
+).
+
+Table 1 SQLM Average Typo:* The reported average EM for the SQLM* baseline is 0.233. The arithmetic mean of its seven reported scores is 
+, which should round to 0.234.
+
+Mathematical Notation Consistency: The backward verification score and reward components switch between lowercase 
+ in Section 3.4 and uppercase 
+ in Section 3.5.
+
+Prompt Output Casing Mismatch: In Appendix C.1, the inference prompt expects uppercase outputs (<answer>YES</answer>), while the training prompt in Appendix C.2 uses lowercase outputs (<answer>yes</answer>).
+
+[Conclusion and References] (Pages: 9-11)
+1. Potential Mistakes and Improvements:
+
+Missing Limitations and Broader Impacts: The Conclusion (Section 6) does not include a discussion of the method's limitations or its potential broader societal impacts. The authors explicitly acknowledge this omission in the NeurIPS Paper Checklist (Questions 2 and 10, lines 414-419 and 474-477), noting plans to add paragraphs discussing the dependence on verifier quality, added training costs, and potential risks like hallucination or over-reliance on automated QA. Incorporating these discussions into the main text or appendix is necessary to meet the criteria for scope transparency, trade-off acknowledgment, and impact analysis.
+2. Minor Corrections and Typos:
+
+Malformed Author Names in Bibliography: Several citations contain incorrectly parsed author names, where initials appear instead of surnames. Please correct the BibTeX entries for:
+
+Reference: "K. T. et al." (likely referring to Kwiatkowski et al.).
+Reference: "J. M. et al." (likely referring to Joshi et al.).
+Reference: "M. A. et al." (likely referring to Mallen et al.).
+Reference: "Y. Z. et al." (likely referring to Yang et al.).
+Reference: The author list contains a formatting error ("Schmidt, S. L., N. A., and M. Lewis").
+Missing Publication Year: Reference ("Absolute zero: Reinforced self-play reasoning with zero data") is missing the publication year.
+
+Capitalization and Typographical Errors in References:
+
+Reference: "llms" should be "LLMs".
+Reference: "in In Proc 2025" contains a redundant "In".
+Reference: "Natural questions" should be "Natural Questions".
+Reference: "Triviaqa" should be "TriviaQA".
+Reference: "Hotpotqa" should be "HotpotQA".
+Reference: "qa" should be "QA".
+Reference: "Musique" should be "MuSiQue".
+Reference: "Searchr1" should be "SearchR1" and "llms" should be "LLMs".
+[Administrative and Checklist] (Pages: 11-13)
+1. Potential Mistakes and Improvements:
+
+Incomplete Disclosure Sections: The authors accurately self-report in the NeurIPS Paper Checklist that several standard components are absent from the current manuscript. Specifically, the justifications for Question 2 (Limitations), Question 8 (Compute resources), Question 10 (Broader impacts), and Question 12 (Licenses for existing assets) state that the authors plan to add these details in a future draft. Deferring these components prevents reviewers from evaluating the method's limitations, societal impacts, and computational or asset-related compliance. These details should be incorporated into the manuscript or supplementary material to fulfill standard disclosure guidelines.
+
+Statistical Significance: In response to Question 7 (Experiment statistical significance), the authors answer [No] and explain that error bars are omitted due to the high computational cost of repeated self-play and reinforcement learning training runs. While the computational constraint is clear and transparently stated, the absence of multiple runs makes it difficult to assess the variance of the method. Providing error bars or variance estimates for at least a representative subset of the experiments or a smaller-scale ablation would strengthen the reliability of the reported performance gains.
+
+2. Minor Corrections and Typos:
+
+No significant typographical or formatting errors were identified in this segment.

@@ -24,7 +24,7 @@ if [ $# -ge 1 ]; then
 fi
 
 algorithm=grpo_batch
-grpo_group_size=1
+grpo_group_size=5
 model=/input/model/Qwen
 model_name=$(basename "$model" | tr '[:upper:]' '[:lower:]')
 

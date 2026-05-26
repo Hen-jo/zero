@@ -1,0 +1,884 @@
+Total pages: 25
+--- Page 1 ---
+Dr. Zero: Self-Evolving Search Agents without
+Training Data
+ZhenruiYue1,2∗, KartikeyaUpasani1, XianjunYang1, SuyuGe2, ShaoliangNie1, YuningMao1, ZheLiu1,
+DongWang2
+1Meta Superintelligence Labs, 2University of Illinois Urbana-Champaign
+*Work done while at Meta
+As high-quality data becomes increasingly difficult to obtain, data-free self-evolution has emerged
+as a promising paradigm. This approach allows large language models (LLMs) to autonomously
+generate and solve complex problems, thereby improving their reasoning capabilities. However, multi-
+turn search agents struggle in data-free self-evolution due to the limited question diversity and the
+substantial compute required for multi-step reasoning and tool using. In this work, we introduce
+Dr.Zero, a framework enabling search agents to effectively self-evolve without any training data. In
+particular, we design a self-evolution feedback loop where a proposer generates diverse questions to
+train a solver initialized from the same base model. As the solver evolves, it incentivizes the proposer
+to produce increasingly difficult yet solvable tasks, thus establishing an automated curriculum to
+refine both agents. To enhance training efficiency, we also introduce hop-grouped relative policy
+optimization (HRPO). This method clusters structurally similar questions to construct group-level
+baselines, effectively minimizing the sampling overhead in evaluating each query’s individual difficulty
+andsolvability. Consequently,HRPOsignificantlyreducesthecomputerequirementsforsolvertraining
+without compromising performance or stability. Extensive experiment results demonstrate that the
+data-free Dr.Zero matches or surpasses fully supervised search agents, proving that complex reasoning
+and search capabilities can emerge solely through self-evolution.
+Date: January 13, 2026
+Code: https://github.com/facebookresearch/drzero
+Correspondence: {zhenrui3, dwang24}@illinois.edu, kart@meta.com
+1 Introduction
+Self-evolving language agents have emerged as a promising paradigm to autonomously enhance model perfor-
+mance by iteratively proposing problems, bootstrapping solutions, and learning from prior experiences (Liu
+et al., 2025a; Zhang et al., 2025a). However, existing methods typically rely on extensive human-curated
+questions(prompts)todriveexploration,maintainingtheneedforthecostlydatacurationprocess(Chenetal.,
+2024; Wang et al., 2025a). To overcome this bottleneck, an automated proposer can be employed to generate
+synthetic training data, thereby making self-evolution possible with minimal or even zero human input (Zhao
+etal.,2025;Chenetal.,2025). AsshowninFigure1,Huangetal.(2025a)designaproposer-solverco-evolution
+framework to iteratively bootstrap questions and rationales, thereby achieving meaningful performance gains
+without access to any curated datasets.
+Nevertheless, self-evolving language agents primarily focus on mathematical or specific reasoning tasks (Zhao
+et al., 2025; Huang et al., 2025a; Wang et al., 2
+
+--- Page 2 ---
+Proposer Iter 1 Proposer Iter 2 Proposer Iter 3
+…
+…
+Base LLM
+Solver Iter 1 Solver Iter 2 Solver Iter 3
+Evolve Provides Data Provides Reward
+Figure1 Theself-evolvingLLMtrainingframework(Huangetal.,2025a)thatiterativelytrainsaproposerandasolver
+with minimal supervision.
+We analyze existing data-free frameworks (Huang et al., 2025a; Chen et al., 2025) and identify two primary
+limitations in proposer training: (1) the trained proposer suffers from limited diversity, exhibiting a bias
+toward simple, one-hop questions; and (2) the generated queries often fail to provide progressive difficulty as
+the solver’s capabilities advance. As a result, such approaches yields moderate performance gains on trivial
+one-hop tasks but struggles to match supervised baselines on complex multi-hop queries (see Section 4).
+Moreover, the standard group relative policy optimization (GRPO) (Shao et al., 2024) significantly increases
+training compute inself-evolution as it requiresnestedsampling: generating multiple queries and subsequently
+producing multiple responses for each question. For instance, Chen et al. (2025) propose a unified model that
+acts as both proposer and solver for simple math and coding tasks. However, its reliance on nested sampling
+renders this approach computationally prohibitive for search agents and creates bottlenecks during complex
+reasoning and search interactions.
+In this paper, we investigate the learning of self-evolution search agents in a data-free setting. We propose
+DeepResearch-Zero (Dr.Zero), a framework that can leverage external search engines and improve both
+proposer and solver performance without accessing any training data. Specifically, we introduce a multi-turn
+tool-use rollout pipeline that enables the trained proposer to significantly improve question generation quality
+andproducecomplex,multi-hopquestions. Furthermore,wedesignadifficulty-guidedrewardthatincentivizes
+the proposer to utilize the search engine and generate challenging yet verifiable queries. As computing
+the reward involves sampling multiple reasoning trajectories from the solver, we also propose hop-grouped
+relative policy optimization (HRPO), which clusters structurally similar questions to provide a more robust
+baseline for advantage estimation. Thus, Dr.Zero avoids nested sampling by generating a single question per
+prompt (in contrast to the multi-sample GRPO), while still maintaining comparable performance through
+HRPO. Combined with further training and inference optimizations, Dr.Zero achieves substantial gains
+compared to the base LLM. Additionally, through multiple training iterations, the model matches or even
+outperforms supervised RL baselines, highlighting that self-evolution alone suffices for inducing complex
+reasoning and search capabilities. We summarize our contributions as follows:
+1. We propose DeepResearch-Zero (Dr.Zero), a unified framework that leverages external search engines
+to autonomously improve both proposer and solver performance. 
+
+--- Page 3 ---
+2 RelatedWork
+2.1 ReinforcementLearning
+Reinforcementlearning(RL)improvesagentperformancebylearningfrompreviousexperienceandmaximizing
+cumulative rewards (Sutton et al., 1998). In the context of LLMs, RL is frequently implemented using policy
+gradient algorithms (Sutton et al., 1999; Ouyang et al., 2022). For example, actor-critic methods such as
+PPO employ a learned critic to estimate a value baseline, thereby reducing gradient variance (Mnih et al.,
+2016; Schulman et al., 2017). A simpler offline alternative is direct preference optimization (DPO) (Rafailov
+et al., 2023), which directly optimizes language models on pairwise preference data. Recently, group-based
+methods like GRPO have been adopted for their ability to construct low-variance baselines from multiple
+responses(Ahmadianetal.,2024;Shaoetal.,2024;Hu,2025). Buildinguponthesealgorithmicimprovements,
+LLMs have demonstrated significant potential across diverse model architectures as well as reasoning-intensive
+tasks (Yu et al., 2025; Huang et al., 2025b; Zheng et al., 2025a).
+2.2 Search-AugmentedLLMs
+Search and retrieval augmentation can improve language modeling by integrating external knowledge (Lewis
+et al., 2020; Guu et al., 2020). Furthermore, iteratively retrieving relevant documents can substantially
+enhance LLM performance on complex questions (Yoran et al., 2024; Yue et al., 2024; Wang et al., 2025b).
+A notable example is IRCoT, where Trivedi et al. (2023) exploit multi-step retrieval to optimize answer
+accuracy on knowledge-intensive tasks. In agentic LLMs, search engines can be incorporated as optional tools
+to enable adaptive retrieval and reasoning, leading to enhanced multi-hop reasoning performance (Jin et al.,
+2025; Zheng et al., 2025b; Zhang et al., 2025b). Nevertheless, existing methods primarily focus on supervised,
+verifiable settings and rely on extensive human queries and annotations for training. Concurrent with our
+work, Lu et al. (2025) propose using self-play to improve search-augmented LLMs. However, their method
+still depends on ground truth labels and numerous human-written examples. In contrast, we target a strict
+data-free setting, relying exclusively on external search engines to facilitate self-improvement.
+2.3 Self-EvolvingLLMs
+Self-evolving LLMs autonomously enhance model capabilities by iteratively generating and learning from their
+ownexperiences(Pangetal.,2024;Liuetal.,2025a). Earlyapproachesutilizeself-playmechanismswherethe
+model acts as both the generator and the evaluator to refine its policy without human annotations (OpenAI
+et al., 2021; Chen et al., 2024; Wu et al., 2024). For instance, self-rewarding LLMs (Yuan et al., 2024)
+employ iterative training loops where the model judges its own outputs to construct preference data for
+optimization. To further eliminate the reliance on external prompts, recent works have introduced data-free
+self-evolution frameworks (Zhao et al., 2025; Chen et al., 2025; Liu et al., 2025b). Notably, R-Zero (Huang
+eta
+
+--- Page 4 ---
+Step 1: Proposer Update via HRPO
+QA Pairs Predictions
+Proposer Solver
+Difficulty Rewards
+Reason & Reason &
+Outcome Rewards
+Search Search
+Self-Evolution Feedback Loop Step 2: Solver Update via GRPO
+Figure2 The Dr.Zero self-evolution feedback loop. Guided by solver feedback, the proposer synthesizes verifiable and
+challenging queries, continuously enhancing the solver’s search and reasoning capabilities.
+where r denotes the proposer reward and I is the indicator function. In contrast to the solver’s simple
+outcome-based reward, the proposer reward is defined over the distribution of predicted answers (i.e., {yˆ}n ).
+i i=1
+Ifallpredictionsarecorrect,thequestionisconsideredtrivial,whereasifnonearecorrect,thequestionislikely
+too difficult for the solver. To enable self-evolution of π and π , we iteratively optimize both components in a
+θ ϕ
+symbiotic loop: the proposer learns to synthesize diverse and challenging questions, while the solver enhances
+its reasoning abilities by learning from these questions. The improved solver performance subsequently
+encourages the proposer to generate increasingly complex queries, forming a continuously evolving curriculum
+(see Figure 2). We initialize both models from the same base LLM and rely exclusively on the search tool
+(R) for external knowledge. To strictly adhere to our training data-free setting, we avoid utilizing any
+demonstrations, questions or annotated answers in our framework.
+3.2 ProposerTraining
+Existing self-evolution methods primarily target specialized domains (e.g., math, coding) to enhance LLM
+performance without external data (Zhao et al., 2025; Huang et al., 2025a; Chen et al., 2025). However,
+for open-domain question answering, we find that such methods tend to generate structurally homogeneous
+one-hop queries, which limits solver performance gains to simple reasoning questions. Even when equipped
+withamulti-turnsearchtool,thesolveryieldsonlymarginalimprovementsonmulti-hopqueries(seeSection4).
+Furthermore, since the proposer reward necessitates multiple solver predictions to assess query difficulty and
+solvability, optimizing the proposer with standard RL algorithm like GRPO becomes highly inefficient (Shao
+et al., 2024). For instance, generating m queries with n predictions each results in (m+1)×n rollouts
+per prompt. Combined with the high latency of multi-turn rollouts, this scaling bottleneck renders existing
+approaches impractical for self-evolving agents that require complex tool interactions.
+Motivated by these limitations, we propose hop-grouped relative policy optimization (HRPO) to train the
+proposer model. Instead of sampling multiple responses for a single prompt, HRPO calculates advantages by
+grouping structurally similar questions. Specifically, we cluster the generated QA pairs by their cross-hop
+complexity, denoted by the number of hops h∈H. Questions with fewer hops are typically simpler, whereas
+higher-hop questions demand extensive search and multi-step reasoning. This hop-
+
+--- Page 5 ---
+A denotes the advantage of the generated QA pair (x ,y ), computed by standardizing the solver’s reward
+i,h i i
+scores over all h-hop questions:
+r −E [r ]
+A = i j∈Ih j . (3)
+i,h (cid:112)Var
+[r ]+δ
+j∈Ih j
+For optimal proposer performance and training efficiency, we adopt a strictly on-policy framework and omit
+ratio clipping. While single-response methods like REINFORCE++ reduce sampling costs, we find that a
+global baseline becomes unstable when processing diverse query structures. This mismatch induces high
+variance in policy gradients, frequently leading to training failures. In contrast, HRPO mitigates this issue by
+computing relative advantages among structurally aligned trajectories.
+To utilize solver signals for training the proposer π , we design a specialized reward function to encourage
+θ
+both verifiability (the task must be solvable) and difficulty (the task must not be trivial). We leverage the
+solver’s pass rate on the generated questions as a proxy for these properties. Let k denote the number of
+correct solutions out of n sampled attempts; we penalize instances where the solver either fails completely
+(k =0) or succeeds trivially (k =n), incentivizing the generation of questions that maximize:
+n
+n−k (cid:88)
+r(y,{yˆ}n )=I(0<k <n) +rf, withk = I(y =yˆ), (4)
+i i=1 n−1 i
+i=1
+here, the reward is maximized when exactly one solution is correct and decays linearly as the number of
+correct predictions increases. We additionally impose a format reward rf to mitigate structural degradation
+during complex generation. This enables the proposer to effectively learn to interleave reasoning with search,
+yielding QA pairs that are both well-formed and challenging.
+3.3 SolverTraining
+For solver training, we sample data pairs (x,y) from the proposer π and optimize π via group relative policy
+θ ϕ
+optimization (GRPO) (Shao et al., 2024). By computing advantages from the empirical group statistics,
+GRPO reinforces valid trajectories and refines the model’s search and reasoning capabilities without requiring
+a separate value function:
+J(ϕ)=E
+(x,y)∼πθ(·|R),{yˆi}n
+i=1
+∼πϕold (·|x,R)
+[ 1 (cid:88) n min (cid:18) π ϕ (yˆ i |x,R) A ,clip( π ϕ (yˆ i |x,R) ,1−ϵ,1+ϵ)A (cid:19) ]−βD , (5)
+n π (yˆ|x,R) i π (yˆ|x,R) i KL
+i=1
+ϕold i ϕold i
+where the advantages are computed via reward standardization (i.e., A i = I(y= s yˆ t i d ) ( − {I m (y ea = n yˆ ( i { ) I } ( n i y = = 1 yˆ ) i + ) δ }n i=1 )). The
+optimization is driven by an outcome-based reward that solely evaluates the correctness of final predictions
+against the synthesized ground truth y. With increasingly complex queries from the proposer, the solver is
+continuously motivated to refine its search and reasoning capabilities. Such interactions create a dynamic
+curriculumthatensuresimprovingsolverperformanceacrossdiverseproblemdomainswithoutexternaltraining
+data. The solver’s progress, in turn, pushes the proposer to synthesize more complex cases, establishing a
+feedback loop that steadily expands both age
+
+--- Page 6 ---
+Table1 Main results of Dr.Zero against few-shot/supervised methods. We mark the best performance in bold and
+underline the second-best results. Unlike baselines that require curated datasets or extensive demonstrations, Dr.Zero
+exploits self-evolution to match or even outperform supervised search agents with zero training data.
+NQ TriviaQA PopQA HotpotQA 2WikiMQA MuSiQue Bamboogle Average
+Qwen2.5-3B-Instruct
+Prompting 0.106 0.288 0.108 0.149 0.244 0.020 0.024 0.134
+IRCoT 0.111 0.312 0.200 0.164 0.171 0.067 0.240 0.181
+Search-o1 0.238 0.472 0.262 0.221 0.218 0.054 0.320 0.255
+RAG 0.348 0.544 0.387 0.255 0.226 0.047 0.080 0.270
+SFT 0.249 0.292 0.104 0.186 0.248 0.044 0.112 0.176
+R1-Instruct 0.210 0.449 0.171 0.208 0.275 0.060 0.192 0.224
+Search-R1 0.323 0.537 0.364 0.308 0.336 0.105 0.315 0.327
+Dr.Zero 0.397 0.572 0.431 0.298 0.291 0.091 0.200 0.326
+Qwen2.5-7B-Instruct
+Prompting 0.134 0.408 0.140 0.183 0.250 0.031 0.120 0.181
+IRCoT 0.224 0.478 0.301 0.133 0.149 0.072 0.224 0.239
+Search-o1 0.151 0.443 0.131 0.187 0.176 0.058 0.296 0.206
+RAG 0.349 0.585 0.392 0.299 0.235 0.058 0.208 0.304
+SFT 0.318 0.354 0.121 0.217 0.259 0.066 0.112 0.207
+R1-Instruct 0.270 0.537 0.199 0.237 0.292 0.072 0.293 0.271
+Search-R1 0.397 0.606 0.404 0.380 0.326 0.168 0.408 0.384
+Dr.Zero 0.406 0.608 0.416 0.362 0.347 0.104 0.360 0.372
+4 Experiments
+4.1 ExperimentSettings
+Datasets&Models. For evaluation, we experiment on multiple open-domain question answering benchmarks,
+including three one-hop datasets Natural Questions (NQ) (Kwiatkowski et al., 2019), TriviaQA (Joshi
+et al., 2017), PopQA (Mallen et al., 2022); and four multi-hop datasets HotpotQA (Yang et al., 2018),
+2WikiMultihopQA(2WikiMQA)(Hoetal.,2020),MuSiQue(Trivedietal.,2022)andBamboogle(Pressetal.,
+2023). These datasets cover diverse search and reasoning challenges, ensuring a comprehensive evaluation of
+Dr.Zero across both single-turn and multi-hop scenarios. In our experiments, we use Qwen2.5 3B/7B Instruct
+as base LLMs for both baseline methods and Dr.Zero.
+Baseline&Evaluation. To demonstrate the efficacy of the data-free Dr.Zero, we evaluate it against several few-
+shot and supervised baseline search agents. Few-shot baselines include standard prompting, IRCoT (Trivedi
+et al., 2023), Search-o1 (Li et al., 2025) and retrieval augmented generation (RAG) (Lewis et al., 2020).
+Supervised baselines consist of supervised fine-tuning (SFT), RL-based fine-tuning without search (R1) (Guo
+et al., 2025) and the RL-based search agent Search-R1 (Jin et al., 2025). All models are evaluated using
+exact match with identical search engine (E5 base) and corpus settings (English Wikipedia dump). Note that
+all baselines require human-annotated demonstrations or training data, whereas Dr.Zero stands as the only
+data-free method. Further implementation details are provided in Section A.
+4.2 ExperimentResults
+OverallPerformance. We first discuss the main evaluation results as reported in Table 1. Based on the
+presented results, we dr
+
+--- Page 7 ---
+Table2 Performance comparison between Dr.Zero and data-free baseline methods.
+NQ TriviaQA PopQA HotpotQA 2WikiMQA MuSiQue Bamboogle Average
+Qwen2.5-3B-Instruct
+SQLM* 0.264 0.432 0.258 0.226 0.238 0.060 0.158 0.233
+R-Zero* 0.389 0.513 0.370 0.243 0.128 0.052 0.096 0.256
+Dr.Zero 0.397 0.572 0.431 0.298 0.291 0.091 0.200 0.326
+Figure3 IterativerewarddynamicsoftheproserandsolverinDr.Zero. Thedownwardshiftsinbaselinerewardsacross
+iterations reflect the co-evolution of the models; as one model strengthens, it naturally lowers the initial reward floor
+for the other, thereby driving further self-improvement through reinforcement learning.
+methods across nearly every benchmark. For instance, using Qwen2.5-3B on NQ, Dr.Zero achieves 0.397
+EM, significantly outperforming few-shot prompting (0.106), IRCoT (0.111) and Search-o1 (0.238). Unlike
+such baselines, our iterative training loop dynamically refines search capabilities across all tasks. (3) Parity
+with Supervised Search Agents: Remarkably, Dr.Zero excels without any training data. On single-hop tasks
+(i.e., NQ, TriviaQA and PopQA), our 3B model outperforms the supervised Search-R1 by 22.9%, 6.5% and
+18.4% respectively. In complex multi-hop scenarios, the 7B variant achieves roughly 90% of Search-R1’s
+performance and even outperforms it on the challenging 2WikiMQA. (4) Scaling and Self-Evolution: As the
+base model scales from 3B to 7B, Dr.Zero exhibits robust gains, particularly in multi-hop reasoning. By
+utilizing HRPO and a difficulty-guided reward, our framework overcomes the typical performance plateau of
+self-evolution methods, generating a high-quality curriculum that continually challenges the solver. Overall,
+our findings demonstrate that Dr.Zero effectively leverages the proposer-solver dynamics to enhance the
+search and reasoning capabilities of the base LLM across diverse benchmarks.
+ComparisontoData-FreeBaselines. WefurthercompareDr.Zeroagainstexistingdata-freemethods,specifically
+self-questioning language models (SQLM) and self-evolving reasoning LLMs (R-Zero) (Chen et al., 2025;
+Huang et al., 2025a). To ensure a fair comparison, we augment baselines with multi-turn reasoning and search
+capabilities, denoting them SQLM* and R-Zero*. Experiment results on the 3B backbone are reported in
+Table 2. From these results, we observe the following: (1) Dr.Zero consistently performs the best across all
+tasks, confirming that our proposer and training pipeline are highly effective for data-free search agents. It
+exceeds SQLM* and R-Zero* by an average of 39.9% and 27.3% respectively. (2) Decoupling the proposer and
+solver (e.g., R-Zero and Dr.Zero) prevents model memorization, leading to better generalization performance
+at test-time. Additionally, improved reward design fosters more challenging questions compared to naïve
+data-free methods. (3) Dr.Zero achieves superior performance and higher efficiency through the proposed
+HRPO and reward formulation. Specifically, hop-based clustering significantly
+
+--- Page 9 ---
+Table4 Performance of Dr.Zero trained with different distributions of generated questions.
+NQ TriviaQA PopQA HotpotQA 2WikiMQA MuSiQue Bamboogle Average
+Qwen2.5-3B-Instruct
+Ratio1:1:1:1 0.402 0.549 0.394 0.297 0.287 0.090 0.176 0.314
+Ratio2:1:1:1 0.398 0.560 0.408 0.287 0.268 0.096 0.192 0.316
+Ratio4:3:2:1 0.397 0.572 0.431 0.298 0.291 0.091 0.200 0.326
+Qwen2.5-7B-Instruct
+Ratio1:1:1:1 0.392 0.591 0.396 0.363 0.352 0.116 0.368 0.368
+Ratio2:1:1:1 0.398 0.585 0.396 0.365 0.346 0.109 0.384 0.369
+Ratio4:3:2:1 0.406 0.608 0.416 0.362 0.347 0.104 0.360 0.372
+quickly and becomes more confident as its reasoning capabilities improve. Together, these trends confirm that
+the proposer-solver interplay creates a dynamic learning environment: the solver achieves rapid and stable
+convergence, while the proposer preserves the diversity to generate high-quality questions.
+DifferentHopRatios. Finally, we inspect how question composition affects the overall performance of Dr.Zero.
+Specifically, we vary the distribution of synthetic questions from the proposer, testing ratios of 1/2/3/4-hop
+questions at 1:1:1:1, 2:1:1:1 and our default 4:3:2:1. These comparative results are detailed in Table 4.
+Interestingly, the 3B model does not exhibit performance gains as the proportion of multi-hop questions
+increases. Theoptimalmulti-hopperformanceisachievedusingthe4:3:2:1ratio,yieldinganaverage0.220EM.
+This suggests that for smaller base models, strengthening fundamental search capabilities (even via single-hop
+queries) can more effectively improve performance than focusing exclusively on complex tasks. In contrast,
+the 7B variant of Dr.Zero demonstrates superior performance on complex benchmarks when trained on a
+higher proportion of multi-hop synthetic data. This indicates that larger models possess a greater inherent
+capacity for resolving cross-hop dependencies; consequently, training on a more challenging curriculum yields
+more gains for the 7B model than for smaller variants. In summary, these scaling behaviors suggest that while
+simpler tasks are essential for improving smaller models, larger models require a more demanding synthetic
+curriculum to fully uncover their reasoning capabilities.
+5 Conclusion
+WeintroducedDr.Zero,adata-freeself-evolutionframeworkthatenhancesthereasoningandsearchcapabilities
+of language agents. By utilizing an iterative proposer-solver training paradigm, Dr.Zero autonomously
+generates diverse and increasingly challenging open-domain questions without relying on training data. In
+addition, the proposed HRPO effectively addresses the computational bottlenecks of multi-turn tool use,
+enabling efficient training by clustering structurally similar queries to estimate advantages. Experimental
+results demonstrate that Dr.Zero not only matches but frequently surpasses supervised search agents across
+multiple question answering benchmarks. These findings validate the potential of the self-evolving Dr.Zero
+as a powerful paradigm for developing advanced 
+
+--- Page 10 ---
+References
+Arash Ahmadian, Chris Cremer, Matthias Gallé, Marzieh Fadaee, Julia Kreutzer, Olivier Pietquin, Ahmet Üstün,
+and Sara Hooker. Back to basics: Revisiting reinforce style optimization for learning from human feedback in llms.
+arXiv preprint arXiv:2402.14740, 2024.
+Lili Chen, Mihir Prabhudesai, Katerina Fragkiadaki, Hao Liu, and Deepak Pathak. Self-questioning language models.
+arXiv preprint arXiv:2508.03682, 2025.
+ZixiangChen,YiheDeng,HuizhuoYuan,KaixuanJi,andQuanquanGu. Self-playfine-tuningconvertsweaklanguage
+models to strong language models. arXiv preprint arXiv:2401.01335, 2024.
+DayaGuo,DejianYang,HaoweiZhang,JunxiaoSong,RuoyuZhang,RunxinXu,QihaoZhu,ShirongMa,PeiyiWang,
+Xiao Bi, et al. Deepseek-r1: Incentivizing reasoning capability in llms via reinforcement learning. arXiv preprint
+arXiv:2501.12948, 2025.
+Kelvin Guu, Kenton Lee, Zora Tung, Panupong Pasupat, and Mingwei Chang. Retrieval augmented language model
+pre-training. In International conference on machine learning, pages 3929–3938. PMLR, 2020.
+Xanh Ho, Anh-Khoa Duong Nguyen, Saku Sugawara, and Akiko Aizawa. Constructing a multi-hop QA dataset for
+comprehensive evaluation of reasoning steps. In Proceedings of the 28th International Conference on Computational
+Linguistics, pages 6609–6625, 2020.
+Jian Hu. Reinforce++: A simple and efficient approach for aligning large language models. arXiv preprint
+arXiv:2501.03262, 2025.
+Chengsong Huang, Wenhao Yu, Xiaoyang Wang, Hongming Zhang, Zongxia Li, Ruosen Li, Jiaxin Huang, Haitao Mi,
+and Dong Yu. R-zero: Self-evolving reasoning llm from zero data. arXiv preprint arXiv:2508.05004, 2025a.
+Wenxuan Huang, Bohan Jia, Zijie Zhai, Shaosheng Cao, Zheyu Ye, Fei Zhao, Zhe Xu, Yao Hu, and Shaohui Lin.
+Vision-r1: Incentivizing reasoning capability in multimodal large language models. arXiv preprint arXiv:2503.06749,
+2025b.
+Pengcheng Jiang, Xueqiang Xu, Jiacheng Lin, Jinfeng Xiao, Zifeng Wang, Jimeng Sun, and Jiawei Han. s3: You don’t
+need that much data to train a search agent via rl. arXiv preprint arXiv:2505.14146, 2025.
+BowenJin,HansiZeng,ZhenruiYue,JinsungYoon,SercanArik,DongWang,HamedZamani,andJiaweiHan. Search-
+r1: Trainingllmstoreasonandleveragesearchengineswithreinforcementlearning. arXivpreprintarXiv:2503.09516,
+2025.
+Mandar Joshi, Eunsol Choi, Daniel S Weld, and Luke Zettlemoyer. TriviaQA: A large scale distantly supervised
+challenge dataset for reading comprehension. In Proceedings of the 55th Annual Meeting of the Association for
+Computational Linguistics (Volume 1: Long Papers), pages 1601–1611, 2017.
+Tom Kwiatkowski, Jennimaria Palomaki, Olivia Redfield, Michael Collins, Ankur Parikh, Chris Alberti, Danielle
+Epstein, Illia Polosukhin, Jacob Devlin, Kenton Lee, et al. Natural questions: a benchmark for question answering
+research. Transactions of the Association for Computational Linguistics, 7:453–466, 2019.
+Patrick Lewis, Ethan Perez, Aleksandra Piktus, Fabio Petroni, Vladimir Karpukhin, Naman Goyal, Heinrich Küttler,
+Mike Lewis, W
+
+--- Page 11 ---
+Alex Mallen, Akari Asai, Victor Zhong, Rajarshi Das, Hannaneh Hajishirzi, and Daniel Khashabi. When not to trust
+language models: Investigating effectiveness and limitations of parametric and non-parametric memories. arXiv
+preprint arXiv:2212.10511, 7, 2022.
+VolodymyrMnih,AdriaPuigdomenechBadia,MehdiMirza,AlexGraves,TimothyLillicrap,TimHarley,DavidSilver,
+and Koray Kavukcuoglu. Asynchronous methods for deep reinforcement learning. In International conference on
+machine learning, pages 1928–1937. PmLR, 2016.
+OpenAI OpenAI, Matthias Plappert, Raul Sampedro, Tao Xu, Ilge Akkaya, Vineet Kosaraju, Peter Welinder, Ruben
+D’Sa, Arthur Petron, Henrique P d O Pinto, et al. Asymmetric self-play for automatic goal discovery in robotic
+manipulation. arXiv preprint arXiv:2101.04882, 2021.
+Long Ouyang, Jeffrey Wu, Xu Jiang, Diogo Almeida, Carroll Wainwright, Pamela Mishkin, Chong Zhang, Sandhini
+Agarwal, Katarina Slama, Alex Ray, et al. Training language models to follow instructions with human feedback.
+Advances in Neural Information Processing Systems, 35:27730–27744, 2022.
+Richard Yuanzhe Pang, Weizhe Yuan, He He, Kyunghyun Cho, Sainbayar Sukhbaatar, and Jason Weston. Iterative
+reasoning preference optimization. Advances in Neural Information Processing Systems, 37:116617–116637, 2024.
+Ofir Press, Muru Zhang, Sewon Min, Ludwig Schmidt, Noah A Smith, and Mike Lewis. Measuring and narrowing the
+compositionality gap in language models. In Findings of the Association for Computational Linguistics: EMNLP
+2023, pages 5687–5711, 2023.
+Rafael Rafailov, Archit Sharma, Eric Mitchell, Christopher D Manning, Stefano Ermon, and Chelsea Finn. Direct
+preferenceoptimization: Yourlanguagemodelissecretlyarewardmodel. AdvancesinNeuralInformationProcessing
+Systems, 36:53728–53741, 2023.
+John Schulman, Filip Wolski, Prafulla Dhariwal, Alec Radford, and Oleg Klimov. Proximal policy optimization
+algorithms. arXiv preprint arXiv:1707.06347, 2017.
+Zhihong Shao, Peiyi Wang, Qihao Zhu, Runxin Xu, Junxiao Song, Xiao Bi, Haowei Zhang, Mingchuan Zhang, YK Li,
+Y Wu, et al. Deepseekmath: Pushing the limits of mathematical reasoning in open language models. arXiv preprint
+arXiv:2402.03300, 2024.
+Hao Sun, Zile Qiao, Jiayan Guo, Xuanbo Fan, Yingyan Hou, Yong Jiang, Pengjun Xie, Yan Zhang, Fei Huang,
+and Jingren Zhou. Zerosearch: Incentivize the search capability of llms without searching. arXiv preprint
+arXiv:2505.04588, 2025.
+Richard S Sutton, Andrew G Barto, et al. Reinforcement learning: An introduction. MIT press Cambridge, 1998.
+Richard S Sutton, David McAllester, Satinder Singh, and Yishay Mansour. Policy gradient methods for reinforcement
+learning with function approximation. Advances in neural information processing systems, 12, 1999.
+Harsh Trivedi, Niranjan Balasubramanian, Tushar Khot, and Ashish Sabharwal. MuSiQue: Multihop questions via
+single-hop question composition. Transactions of the Association for Computational Linguistics, 10:539–554, 2022.
+Harsh Trivedi, Niranjan Balasubr
+
+--- Page 12 ---
+Zhilin Yang, Peng Qi, Saizheng Zhang, Yoshua Bengio, William Cohen, Ruslan Salakhutdinov, and Christopher D
+Manning. HotpotQA: A dataset for diverse, explainable multi-hop question answering. In Proceedings of the 2018
+Conference on Empirical Methods in Natural Language Processing, pages 2369–2380, 2018.
+Ori Yoran, Tomer Wolfson, Ori Ram, and Jonathan Berant. Making retrieval-augmented language models robust to
+irrelevant context. In The Twelfth International Conference on Learning Representations, 2024.
+Qiying Yu, Zheng Zhang, Ruofei Zhu, Yufeng Yuan, Xiaochen Zuo, Yu Yue, Weinan Dai, Tiantian Fan, Gaohong Liu,
+LingjunLiu,etal.Dapo: Anopen-sourcellmreinforcementlearningsystematscale.arXivpreprintarXiv:2503.14476,
+2025.
+WeizheYuan, Richard Yuanzhe Pang, Kyunghyun Cho, Xian Li, Sainbayar Sukhbaatar, Jing Xu, and Jason EWeston.
+Self-rewarding language models. In Forty-first International Conference on Machine Learning, 2024.
+Zhenrui Yue, Honglei Zhuang, Aijun Bai, Kai Hui, Rolf Jagerman, Hansi Zeng, Zhen Qin, Dong Wang, Xuanhui
+Wang, and Michael Bendersky. Inference scaling for long-context retrieval augmented generation. arXiv preprint
+arXiv:2410.04343, 2024.
+ZhenruiYue,BowenJin,HuiminZeng,HongleiZhuang,ZhenQin,JinsungYoon,LanyuShang,JiaweiHan,andDong
+Wang. Hybrid latent reasoning via reinforcement learning. arXiv preprint arXiv:2505.18454, 2025.
+Ding-Chu Zhang, Yida Zhao, Jialong Wu, Liwen Zhang, Baixuan Li, Wenbiao Yin, Yong Jiang, Yu-Feng Li, Kewei Tu,
+Pengjun Xie, et al. Evolvesearch: An iterative self-evolving search agent. In Proceedings of the 2025 Conference on
+Empirical Methods in Natural Language Processing, pages 13134–13147, 2025a.
+Weizhi Zhang, Yangning Li, Yuanchen Bei, Junyu Luo, Guancheng Wan, Liangwei Yang, Chenxuan Xie, Yuyao Yang,
+Wei-Chieh Huang, Chunyu Miao, et al. From web search towards agentic deep research: Incentivizing search with
+reasoning agents. arXiv preprint arXiv:2506.18959, 2025b.
+Andrew Zhao, Yiran Wu, Yang Yue, Tong Wu, Quentin Xu, Matthieu Lin, Shenzhi Wang, Qingyun Wu, Zilong Zheng,
+and Gao Huang. Absolute zero: Reinforced self-play reasoning with zero data. arXiv preprint arXiv:2505.03335,
+2025.
+Chujie Zheng, Shixuan Liu, Mingze Li, Xiong-Hui Chen, Bowen Yu, Chang Gao, Kai Dang, Yuqiong Liu, Rui Men,
+An Yang, et al. Group sequence policy optimization. arXiv preprint arXiv:2507.18071, 2025a.
+YuxiangZheng,DayuanFu,XiangkunHu,XiaojieCai,LyumanshanYe,PengruiLu,andPengfeiLiu. Deepresearcher:
+Scaling deep research via reinforcement learning in real-world environments. arXiv preprint arXiv:2504.03160,
+2025b.
+Yuxin Zuo, Kaiyan Zhang, Li Sheng, Shang Qu, Ganqu Cui, Xuekai Zhu, Haozhan Li, Yuchen Zhang, Xinwei Long,
+Ermo Hua, et al. Ttrl: Test-time reinforcement learning. arXiv preprint arXiv:2504.16084, 2025.
+12
+
+--- Page 13 ---
+Appendix
+A Implementation
+In our experiments, we implement Dr.Zero as an alternating optimization of the proposer and solver, as
+illustrated in Figure 1. We start by training the proposer and utilizing the base model as the generative
+reward (Yang et al., 2024). Specifically, we rollout one response per prompt and extract the corresponding
+question and answer. These serve as inputs to the solver to compute the reward defined in Equation (4).
+Finally, this reward is employed by HRPO to update the proposer model, as described in Equation (2). We
+observe that the reward saturates within approximately 50 steps due to our efficient design. Therefore, we
+train the proposer for 50 steps, generate QA data on the corresponding prompts, and subsequently utilize
+this data to train the solver for 50 steps via GRPO (Shao et al., 2024). In our experiments, the proposer is
+configured with a default generation ratio of 4:3:2:1 for 1-, 2-, 3-, and 4-hop questions respectively. Under
+this setting, the solver performance typically peaks after 2 to 3 self-evolution iterations, with further training
+yielding only marginal improvements. Therefore, we limit training to 3 iterations (150 steps per model),
+which is significantly fewer than baselines like R1 and Search-R1. For further hyperparameters, we conduct a
+minimal search over the maximum gradient norm and KL divergence coefficient to maintain training stability.
+The hyperparameters are held constant in our experiments, with full details reported in Table 5 and Table 6.
+Table5 Proposer (HRPO) hyperparameter settings.
+Algorithm HRPO
+Steps 50
+Optimizer AdamW
+Optimizer Momentum β , β = 0.9, 0.999
+1 2
+Warmup Ratio 0.03
+Weight Decay 0.01
+Learning Rate 5e-7, 1e-6
+Max Gradient Norm 0.1, 1.0
+Group size in HRPO 1
+Reward size in HRPO 5
+KL-Div in HRPO 0
+Total Train Batch Size 256
+LR Scheduler Constant with Warmup
+Precision (WA) BF16-mixed
+Max Turn in Rollout 5
+Max Sequence Length 4096
+For the format reward in HRPO, we define four requirements: (1) adherence to the <think>...</think>
+structure; (2) valid tool usage, including correct tool call and arguments; (3) an extractable question enclosed
+in <question>...</question> tags; and (4) an extractable answer within <answer>...</answer> tags.
+These components are computed individually with a lower bound of 0 and sum to a maximum total of 0.5.
+This stands in addition to the difficulty score, which ranges from 0 to 1 (see Equation (4)). We detail the tool
+instructions and prompts for the proposer and solver in Figure 5 and Figure 6, respectively, with qualitative
+examples available in Section C. For the external search engine, we configure it by indexing the corpus and
+embedding queries using the E5 base model (Wang et al., 2022) following (Yue et al., 2025; Jin et al., 2025).
+During inference, we perform an approximate nearest neighbor (ANN) search to retrieve the top-3 documents.
+These passages are subsequently formatted and returned as the tool response. Finally, for both train
+
+--- Page 14 ---
+Table6 Solver (GRPO) hyperparameter settings.
+Algorithm GRPO
+Steps 50
+Optimizer AdamW
+Optimizer Momentum β , β = 0.9, 0.999
+1 2
+Warmup Ratio 0.03
+Weight Decay 0.01
+Learning Rate 1e-6
+Max Gradient Norm 0.1, 1.0
+Group size in GRPO 5
+KL-Div in GRPO 0, 0.001
+ϵ in GRPO 0.2
+Total Train Batch Size 256
+LR Scheduler Constant with Warmup
+Precision (WA) BF16-mixed
+Max Turn in Rollout 5
+Max Sequence Length 3072
+Table7 Ablation results of Dr.Zero.
+NQ TriviaQA PopQA HotpotQA 2WikiMQA MuSiQue Bamboogle
+Qwen2.5-3B-Instruct
+Dr.Zero (50 steps) 0.381 0.526 0.392 0.284 0.243 0.084 0.216
+w/ 100 train steps 0.379 0.552 0.425 0.281 0.243 0.064 0.168
+w/o format reward 0.365 0.501 0.350 0.287 0.272 0.056 0.192
+w/ parabolic reward 0.388 0.541 0.408 0.279 0.246 0.058 0.144
+w/o initial document 0.273 0.461 0.239 0.239 0.241 0.099 0.163
+B AdditionalResults
+We provide additional results validating the design choices behind Dr.Zero and HRPO. Specifically, we assess
+the effectiveness of the proposer within Dr.Zero by ablating key components, such as the format reward and
+the difficulty-based reward. To accommodate computational constraints, we limit the training of the 3B
+backbone to a single iteration while selectively removing components from the full framework. We examine
+the following variations: (1) extending training to 100 steps; (2) removing the format reward; (3) employing a
+parabolic reward in the proposer (which peaks when solver accuracy is approximately 50%); and (4) omitting
+the document in initial prompt. The ablation results are reported in Table 7, based on which we observe:
+(1) increasing the training duration from 50 to 100 steps results in comparable or slightly degraded average
+performance (0.304 vs. 0.302 averaged across benchmarks), suggesting that Dr.Zero converges efficiently and
+does not benefit from prolonged training in each self-evolution iteration. (2) Removing the format reward
+results in an average performance drop from 0.304 to 0.289, validating its critical role in guiding the proposer
+toconducteffectivesearchandreasoningwhilemaintainingstructuralvalidity. (3)Thedefaultdifficulty-based
+reward outperforms the parabolic design. This indicates that our proposed reward shaping provides more
+effective signals for generating challenging queries compared to a simple parabolic objective. (4) The most
+significant performance drop occurs when the initial document is removed (average score falls to 0.245).
+This indicates that the initial context is crucial for the model to generate diverse synthetic questions for
+training. Overall, the results demonstrate that each component of Dr.Zero plays a critical role in guiding the
+proposer to generate structurally valid and challenging queries, validating our integrated design as an effective
+framework for search agents in data-free self-evolution.
+Furthermore, we compare the efficiency of HRPO against the standard GRPO algorithm. For GRPO, we
+generate 4 questions per prompt and perform 4 rollouts per question, to
+
+--- Page 15 ---
+Table8 Comparison between HRPO and GRPO.
+HRPO GRPO
+Qwen2.5-3B-Instruct
+NQ 0.397 0.361
+TriviaQA 0.572 0.548
+PopQA 0.431 0.377
+HotpotQA 0.298 0.303
+2WikiMQA 0.291 0.279
+MuSiQue 0.091 0.100
+Bamboogle 0.200 0.272
+Average 0.326 0.320
+Table9 Significance test of Dr.Zero against supervised methods.
+NQ TriviaQA PopQA HotpotQA 2WikiMQA MuSiQue Bamboogle
+Qwen2.5-3B-Instruct
+SFT 0.249 0.292 0.104 0.186 0.248 0.044 0.112
+R1-Instruct 0.210 0.449 0.171 0.208 0.275 0.060 0.192
+Search-R1 0.323 0.537 0.364 0.308 0.336 0.105 0.315
+Dr.Zero 0.382±.016 0.552±.014 0.401±.030 0.303 ±.004 0.291 ±.014 0.101 ±.016 0.229 ±.033
+Qwen2.5-7B-Instruct
+SFT 0.318 0.354 0.121 0.217 0.259 0.066 0.112
+R1-Instruct 0.270 0.537 0.199 0.237 0.292 0.072 0.293
+Search-R1 0.397 0.606 0.404 0.380 0.326 0.168 0.408
+Dr.Zero 0.400 ±.008 0.599 ±.011 0.405 ±.011 0.362 ±.002 0.351±.007 0.112 ±.006 0.352 ±.033
+prompt. In contrast, HRPO generates a single question per prompt with 5 solver predictions, reducing the
+rollout computational cost to about one-fourth of that required by GRPO. For performance comparison, we
+evaluate both variants using the 3B backbone and present the corresponding results in Table 8. The results
+show that HRPO achieves an average score of 0.326, even surpassing the 0.320 baseline of GRPO despite
+significantly less training costs. Notably, HRPO demonstrates superior performance on one-hop datasets (e.g.,
+NQ), while GRPO retains an advantage on multi-hop benchmarks (HotpotQA, MuSiQue and Bamboogle).
+This suggests that for complex multi-step reasoning tasks, higher computational resources are still essential
+to ensure accurate baseline estimation and maximize the learning signals from synthetic data. In summary,
+HRPO achieves higher aggregate performance while utilizing significantly fewer computational resources than
+GRPO, highlighting its effectiveness for efficient data-free self-evolution.
+Finally, we provide additional significance testing of Dr.Zero against supervised baselines. In Table 1, we
+follow the verl implementation and adopt greedy decoding for evaluation. Here, we perform additional
+experiments to provide average results with standard deviations. The results are reported in Table 9 and we
+mark results in bold if the performance gains are statistically significant. From the results we note: (1) for
+the 3B backbone, Dr.Zero shows consistent gains on knowledge-intensive tasks like NQ. This indicates that
+self-evolution effectively optimizes search policies for direct retrieval, significantly outperforming the strong
+Search-R1 baseline. (2) On complex multi-hop datasets, the 7B backbone demonstrates more prominent gains,
+achieving a significant 7.67% relative improvement on 2WikiMQA. This suggests that larger models are more
+effective for handling complex interleaved search and reasoning. Overall, we observe consistent performance
+metrics, demonstrating that Dr.Zero can reliably match or exceed supervised search agents.
+15
+
+--- Page 16 ---
+C QualitativeExamples
+In this section, we present qualitative examples to illustrate the details of the Dr.Zero framework. We begin
+by providing the full prompts used to guide the proposer and solver in Figure 5 and Figure 6, respectively. To
+demonstrate the proposer’s ability to synthesize training data of varying complexity, we showcase generation
+trajectories across different reasoning depths from Figures 7 to 10. These examples highlight the proposer’s
+capacity to ground questions in initial documents and extend them to more challenging ones via iterative
+search and reasoning. Finally, Figures 11 to 14 depict the solver’s inference process, verifying its ability
+to successfully resolve these multi-step queries through structured reasoning and external tool utilization.
+Note that the last examples for the proposer (Figure 10) and solver (Figure 14) did not yield satisfactory
+reasoning or outputs. These instances were intentionally selected to illustrate potential failure modes, such as
+instruction deviation or truncation due to length constraints.
+From these qualitative examples, we make the following observations: (1) the proposer effectively scales from
+single-hop extraction to complex multi-hop synthesis. It demonstrates a sophisticated ability to identify
+"bridge entities" that link disparate documents, transforming a simple starting point into a challenging
+multi-step retrieval task. (2) The solver consistently utilizes the thinking blocks to decompose questions
+into manageable sub-queries. This internal pattern allows the model to verify intermediate facts before
+proceeding to the next reasoning step, as seen in Figure 13. (3) Both models exhibit high proficiency in
+using the search tool. The solver, in particular, demonstrates ‘adaptive retrieval’, knowing when its internal
+knowledge is insufficient and formulating targeted search queries to fill such gaps. (4) While the framework is
+generally robust, the final examples highlight current limitations in long-context generation. Specifically, as
+the number of hops increases, the models can occasionally deviate from strict formatting constraints or reach
+maximum token limits, resulting in incomplete trajectories. Overall, these qualitative examples demonstrate
+thatwhiletheDr.Zeromodelsarecapableofsophisticatedmulti-hopreasoning,enhancingfoundationalmodel
+capabilities and instruction-following robustness remains essential for extending the frontier of self-evolving
+LLMs toward increasingly high-complexity tasks.
+16
+
+--- Page 17 ---
+System
+YouareQwen,createdbyAlibabaCloud.Youareahelpfulassistant.
+#Tools
+Youmaycalloneormorefunctionstoassistwiththeuserquery.
+Youareprovidedwithfunctionsignatureswithin<tools></tools>XMLtags:
+<tools>
+{"type":"function","function":{"name":"search","description":"Searchesthewebforrelevantinformationbasedonthegivenquery.",
+(cid:44)→ "parameters":{"type":"object","properties":{"query_list":{"type":"array","description":"Alistoffully-formedsemanticqueries.
+(cid:44)→ Thetoolwillreturnsearchresultsforeachquery.","enum":null}},"required":["query_list"]},"strict":false}}
+</tools>
+Foreachfunctioncall,returnajsonobjectwithfunctionnameandargumentswithin<tool_call></tool_call>XMLtags:
+<tool_call>
+{"name":<function-name>,"arguments":<args-json-object>}
+</tool_call>
+User / Tool
+Youareanexpertinquestiongeneration.Craftonechallenging,deterministicquestionanditssingle,unambiguousanswerbasedonthe
+(cid:44)→ providedsourcedocument.Thelogicalpathmuststartfromthedocumentandrequireexactlynhops(i.e.,n-1searches)toreachthe
+(cid:44)→ finalanswer.
+###Definitions
+1.Hop:Anodeinthereasoningchain.Hop1isthestartingentityfoundinthedocument.Hopnisthefinalanswer.
+###Inputs
+1.n:theexactnumberofhopsinthereasoningchain(requiringn-1searches).
+2.Sourcedocument:thefullsourcetext.
+###Process&Tools
+1.AnalyzetheDocumentandSelecttheStartingPoint
+-Readandanalyzethesourcedocument.
+-Selectaspecificentity,eventordetailexplicitlymentionedinthetext.ThisentitybecomesHop1(theinitialclue).
+2.DesigntheChainForwards
+-FromHop1toHop2:IdentifyafactualattributeorrelationofHop1thatisNOTinthetextbutcanbefoundviasearch.Theresultis
+(cid:44)→ Hop2.
+-Iterate:ContinueconnectingthecurrentHopitothenextHopi+1usingdeterministic,verifiablerelationfoundviasearch.
+-StopatHopn:Continuethisprocessuntilyouhaveexactlynhops.Hopnmustbeasingle,canonicalfinalanswer.
+3.Reasoning&SearchProtocol
+-Alwaysreasoninside`<think>...</think>`whenyouplanconnectionsorreceivenewinformation.
+-Foreachhoptransitionthatrequiresexternalinformation,issuesearchqueryusing`<tool_call>...</tool_call>`.
+-Searchresultswillbeprovidedbetween`<tool_response>...</tool_response>`bythesystem.
+4.OutputFormat
+-EmitanumberedsequenceofEXACTLYn-1searchsteps.Foreachsearchi(1ton-1),produce:
+`<think>Reasoningstepi:IdentifyHopiindocument/searchresults,formulatequerytoreachHopi+1</think>`
+`<tool_call>QuerytosearchHopi+1</tool_call>`
+`[Waitforsearchresultsin<tool_response>fromsystem]`
+-AftercompletingallsearchesandarrivingatHopn,outputthequestionandfinalanswer:
+`<think>Finalreasoningstep:ConfirmthechainiscompletewithHopnandformulatethequestion</think>`
+`<question>AchallengingquestionthatprovidesHop1(theinitialclue)andasksforthefinalanswer(Hopn)</question>`
+`<answer>Thesingle,concisefinalanswer(Hopn)</answer>`
+###Examples
+1.ExampletemplateforHopn=1,i.e.nosearch:
+`<think>[ExplainhowHop1isselectedfromthesourcedocumentandhowthequestionisformulated]</think>`
+`<question>[QuestionbasedsolelyonthetextentityHop1]</question>`
+`<answer>[Answer(Hop1)]</answer>`
+2.Exampletemplatefor
+
+--- Page 18 ---
+System
+YouareQwen,createdbyAlibabaCloud.Youareahelpfulassistant.
+#Tools
+Youmaycalloneormorefunctionstoassistwiththeuserquery.
+Youareprovidedwithfunctionsignatureswithin<tools></tools>XMLtags:
+<tools>
+{"type":"function","function":{"name":"search","description":"Searchesthewebforrelevantinformationbasedonthe
+givenquery.","parameters":{"type":"object","properties":{"query_list":{"type":"array","description":"Alistof
+(cid:44)→
+fully-formedsemanticqueries.Thetoolwillreturnsearchresultsforeachquery.","enum":null}},"required":
+(cid:44)→
+["query_list"]},"strict":false}}
+(cid:44)→
+</tools>
+Foreachfunctioncall,returnajsonobjectwithfunctionnameandargumentswithin<tool_call></tool_call>XMLtags:
+<tool_call>
+{"name":<function-name>,"arguments":<args-json-object>}
+</tool_call>
+User / Tool
+Answerthegivenquestion.Youmustconductreasoninginside<think>and</think>firsteverytimeyougetnew
+information.Afterreasoning,ifyoufindyoulacksomeknowledge,youcancallasearchengineby<tool_call>query
+(cid:44)→
+</tool_call>anditwillreturnthetopsearchedresultsbetween<tool_response>and</tool_response>.Youcan
+(cid:44)→
+searchasmanytimesasyourwant.Ifyoufindnofurtherexternalknowledgeneeded,youcandirectlyprovidethe
+(cid:44)→
+answerinside<answer>and</answer>,withoutdetailedillustrations.Forexample,<answer>Beijing</answer>.
+(cid:44)→
+Question:{question}
+(cid:44)→
+Figure6 System prompt and initial instructions for the solver in Dr.Zero.
+System
+Systempromptomittedduetopagesize
+User / Tool
+Instructionspartiallyomittedduetopagesize
+Now,generateaquestionanditsanswerwithn=1hopsstartingfromthefollowingsourcedocument:(Title:"Robert
+HolmesàCourt")
+(cid:44)→
+sellinghisschoolmatesphotographshehadtakenofthem,andbydrivingthemhomeinexchangefortheirtravelallowances.
+HolmesàCourtstudiedforestryattheUniversityofAucklandandMasseyUniversity,wherehegraduatedwitha
+(cid:44)→
+BachelorofAgriculturalSciencein1962...
+(cid:44)→
+Assistant
+<think>ThedocumentmentionsthatRobertHolmesàCourtstudiedforestryattheUniversityofAucklandandMassey
+University.Hop1isRobertHolmesàCourt.Fromthis,wecandeducethatthenextstepwouldbetoidentifywhich
+(cid:44)→
+universityhegraduatedfromamongthesetwo.</think>
+(cid:44)→
+<question>AtwhichuniversitydidRobertHolmesàCourtgraduatewithaBachelorofAgriculturalSciencein1962?
+</question>
+(cid:44)→
+<answer>MasseyUniversity</answer>
+Figure7 Proposer example with hop = 1 and initial document title: Robert Holmes à Court.
+18
+
+--- Page 19 ---
+System
+Systempromptomittedduetopagesize
+User / Tool
+Instructionspartiallyomittedduetopagesize
+Now,generateaquestionanditsanswerwithn=2hopsstartingfromthefollowingsourcedocument:(Title:"Equivalent
+carboncontent")
+(cid:44)→
+Societyadoptedthecriticalmetalparameter(Pcm)forweldcracking,whichwasbasedontheworkfromItoandBessyo,is:
+Ifsomeofthevaluesarenotavailable,thefollowingformulaissometimesused:Thecarbonequivalentisameasureof
+(cid:44)→
+thetendencyoftheweldtoformmartensiteoncoolingandtosufferbrittlefracture.Whenthecarbonequivalentis
+(cid:44)→
+between0.40and0.60weldpreheatmaybenecessary...
+(cid:44)→
+Assistant
+<think>Thesourcedocumentmentionsthe"carbonequivalent"asameasureofthetendencyofweldstoformmartensite
+andsufferbrittlefracture.Hop1is"carbonequivalent".ForHop2,theformulatodetermineifaspotweldwillfail
+(cid:44)→
+needstobefound,whichlogicallyfollowsfromtheconceptofcarbonequivalent.</think>
+(cid:44)→
+<tool_call>
+{"name":"search","arguments":{"query_list":["carbonequivalentformulatodeterminespotweldfailure"]}}
+</tool_call>
+User / Tool
+<tool_response>
+Searchresultsomittedduetopagesize
+</tool_response>
+Assistant
+<think>Reviewingthesearchresults,Doc1directlyprovidestheformulausedtodetermineifaspotweldwillfail,whichis
+referencedinthesourcedocument.Theformulais:Thecarbonequivalentformulaisusedtodetermineifaspotweld
+(cid:44)→
+willfail.Hop1is"carbonequivalent",andHop2,whichisthefinalanswer,istheformulausedtodetermineifaspot
+(cid:44)→
+weldwillfail.</think>
+(cid:44)→
+<question>Whatspecificformulaisusedtodetermineifaspotweldwillfailbasedonthecarbonequivalent?</question>
+<answer>Thecarbonequivalentformula</answer>
+Figure8 Proposer example with hop = 2 and initial document title: Equivalent carbon content.
+19
+
+--- Page 20 ---
+System
+Systempromptomittedduetopagesize
+User / Tool
+Instructionspartiallyomittedduetopagesize
+Now,generateaquestionanditsanswerwithn=3hopsstartingfromthefollowingsourcedocument:(Title:"Steven
+Febey")
+(cid:44)→
+selectedinthenationaldraft.HefelljustshortofRobertFlower'sclubrecordof272gamesandasof2007onlyfourpeople
+haveplayedmoregamesfortheDemonsAfterthe2002season,FebeywenttoBaliwithhisteammatesandwascaught
+(cid:44)→
+upinthebombingswhichdevastatedtheisland.StandingbesideformerDemonsplayerStevenArmstrongandDavid
+(cid:44)→
+Robbins,FebeywasabouttoentertheSariClubwhenthecarbombexploded...
+(cid:44)→
+Assistant
+<think>Reasoningstep1:IdentifyHop1inthedocument,formulatethequerytoreachHop2</think>
+<tool_call>
+{"name":"search","arguments":{"query_list":["otherplayerswhoplayedinboth1988and2000AFLgrandfinalsfor
+MelbourneDemons"]}}
+(cid:44)→
+</tool_call>
+User / Tool
+<tool_response>
+Searchresultsomittedduetopagesize
+</tool_response>
+Assistant
+<think>Hop2inthedocumentandsearchresultsisnotexplicitlymentioned,soweneedtofurtherrefinethesearch.The
+documentmentionsDavidNeitz,thecaptainofMelbourne,andplayerslikeShaneWoewodinandGregHealy.However,
+(cid:44)→
+thesearchresultspointustothe1988and2000AFLGrandFinals,indicatingthatweneedtolookforaplayer
+(cid:44)→
+specificallyfromthesefinalswhoalsoplayedforMelbourne.Thefinalhop,orHop3,mustbeawell-knownplayerfrom
+(cid:44)→
+theMelbourneDemonswhoplayedinboth1988and2000grandfinals,whichcanbeRobertHarveybasedonhistorical
+(cid:44)→
+knowledge.</think>
+(cid:44)→
+<think>Reasoningstep2:IdentifyHop2inthesearchresultsandreformulatetofindHop3</think>
+<tool_call>
+{"name":"search","arguments":{"query_list":["RobertHarveyMelbourneDemons19882000grandfinals"]}}
+</tool_call>
+User / Tool
+<tool_response>
+Searchresultsomittedduetopagesize
+</tool_response>
+Assistant
+<think>ThesearchresultsconfirmthatRobertHarveyplayedfortheMelbourneDemonsinboth1988and2000,making
+himthewell-knownplayerwhofitsthecriteria.Therefore,Hop3is"RobertHarvey".Thequestionisformulatedto
+(cid:44)→
+startwiththeexplicitentityinthedocument,"StevenFebey",andleadtothesingle,unambiguousanswer,"Robert
+(cid:44)→
+Harvey".</think>
+(cid:44)→
+<question>WhoistheonlyotheractiveMelbourneDemonsplayertohaveplayedinboththe1988and2000AFLGrand
+Finals,alongsideStevenFebey?</question>
+(cid:44)→
+<answer>RobertHarvey</answer>
+Figure9 Proposer example with hop = 3 and initial document title: Steven Febey.
+20
+
+--- Page 21 ---
+System
+Systempromptomittedduetopagesize
+User / Tool
+Instructionspartiallyomittedduetopagesize
+Now,generateaquestionanditsanswerwithn=4hopsstartingfromthefollowingsourcedocument:(Title:"Australian
+LaborParty(AustralianCapitalTerritoryBranch)")
+(cid:44)→
+withintheALP.TheissuewasVietnamanditinvolvedaNorth-Southsplit.ThecontenderGordonWalshwonthe
+preselection,butthiswaslateroverturnedbytheNSWBranch...
+(cid:44)→
+Assistant
+<think>Reasoningstep1:IdentifyHop1inthedocument,whichisthe'CanberraCity(North)Branch'.Itmentions118
+membersin1968butdoesnotdirectlyrelatetotheACTBranchestablishment.Formulateaquerytofindinformation
+(cid:44)→
+abouttheACTBranch'sautonomy.</think>
+(cid:44)→
+<tool_call>
+{"name":"search","arguments":{"query_list":["whendidthealpnationalconferenceestablishtheself-governingact
+branch"]}}
+(cid:44)→
+</tool_call>
+User / Tool
+<tool_response>
+Searchresultsomittedduetopagesize
+</tool_response>
+Assistant
+<think>Reasoningstep2:FromthesearchresultinDocument1,itismentionedthat"ALPNationalConference
+establishedanautonomousACTBranchin1973".ThisprovidesuswithourHop2,whichis1973.Now,Ineedtouse
+(cid:44)→
+theinformationfromHop2(1973)toformulateaqueryforHop3.Sincetheinformationmovesfromtheestablishment
+(cid:44)→
+oftheACTBranchtotheself-governanceoftheACT,aqueryaboutwhentheACTbecameaself-governingterritory
+(cid:44)→
+wouldbeappropriate.</think>
+(cid:44)→
+<tool_call>
+{"name":"search","arguments":{"query_list":["whendidtheaustraliancapitalterritorybecomeaself-governing
+territory"]}}
+(cid:44)→
+</tool_call>
+User / Tool
+<tool_response>
+Searchresultsomittedduetopagesize
+</tool_response>
+Assistant
+<think>Reasoningstep3:Fromthesearchresults,itisclearthattheACTbecameaself-governingterritoryin1989.This
+givesusHop3,whichis1989.Thefinalstepistocreateaquerythatdeterminesthefinalanswer(Hop4)basedon
+(cid:44)→
+theseprevioushops.</think>
+(cid:44)→
+<tool_call>
+{"name":"search","arguments":{"query_list":["whendidtheaustraliancapitalterritoryLegislativeAssemblyfirstsit"]}}
+</tool_call>
+User / Tool
+<tool_response>
+Searchresultsomittedduetopagesize
+</tool_response>
+Assistant
+<think>Reasoningstep4:ThesearchresultsclearlyindicatethattheAustralianCapitalTerritoryLegislativeAssembly
+firstsatin1989.Thisisourfinalanswer,Hop4,whichdirectlyfollowsfromtheprevioushops.Thechallengeinthe
+(cid:44)→
+questionisdesignedsuchthattheinitialentity'CanberraCity(North)Branch'isprovidedasthestartingpoint,and
+(cid:44)→
+thesolverneedstofollowthehopsasestablishedtoreachthefinalanswer.
+(cid:44)→
+NowIwillformulatethequestionandthefinalanswer:
+</think>
+<question>InwhichyeardidtheAustralianLaborParty(ACTBranch)firstsitastheLegislativeAssemblyofthe
+AustralianCapitalTerritory?</question>
+(cid:44)→
+<answer>1989</answer>
+Figure10 Proposer example with hop = 4 and initial document title: Australian Labor Party (Australian Capital
+Territory Branch).
+21
+

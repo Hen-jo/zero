@@ -29,6 +29,7 @@ fi
 algorithm=grpo_batch
 grpo_group_size=1
 reward_group_size=5
+verifier_grpo_group_size=5
 model=/input/model/Qwen
 model_name=$(basename "$model" | tr '[:upper:]' '[:lower:]')
 
@@ -45,7 +46,7 @@ VAL_DATA="/input/data/Drzero/test.parquet"
 SOLVER_NAME="solver_hf"
 CHALLENGER_NAME="challenger_iter${cur_iter}_ratio${hop_ratio}_${algorithm}_group${grpo_group_size}-${reward_group_size}_${model_name}"
 SOLVER_PATH="$OUTPUT_DIR/checkpoints/dr-zero/solver_iter${prev_iter}_ratio${hop_ratio}_${solver_algorithm}_group${solver_grpo_group_size}_${model_name}/${SOLVER_NAME}"
-VERIFIER_PREV_HF="$OUTPUT_DIR/checkpoints/dr-zero/verifier_iter${prev_iter}_ratio${hop_ratio}_${algorithm}_group${grpo_group_size}_${model_name}/verifier_iter${prev_iter}_hf"
+VERIFIER_PREV_HF="$OUTPUT_DIR/checkpoints/dr-zero/verifier_iter${prev_iter}_ratio${hop_ratio}_${algorithm}_group${verifier_grpo_group_size}_${model_name}/verifier_iter${prev_iter}_hf"
 
 
 export TENSORBOARD_DIR=$OUTPUT_DIR/tensorboard

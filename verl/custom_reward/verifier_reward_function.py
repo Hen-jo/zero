@@ -3,21 +3,14 @@ verifier_reward_function.py
 
 Reward function for verifier GRPO training.
 
-The verifier is trained to judge whether a solver's proposed answer is correct.
-  - Ground truth label in training data: "yes" or "no"
-  - Verifier must output <answer>yes</answer> or <answer>no</answer>
-  - Reward = 0.5 * format_reward + 0.5 * accuracy_reward
+Same structure as compute_challenger_format_scores:
+  final_score = (1 + think + tool + ans) / 4  if accuracy_correct else 0
 
-Format reward (same philosophy as challenger):
-  - think_reward : used <think> at least once
-  - tool_reward  : used appropriate number of searches for the hop count
-                   hop==1 → no search needed (reward=1.0)
-                   hop>=2 → min((1 + tool_calls) / hop, 1.0) if calls match responses
-  - ans_reward   : output is yes or no
-  - format = (think + tool + ans) / 3, gated on valid answer
-
-Accuracy reward:
-  - 1.0 if predicted yes/no matches ground-truth label, 0.0 otherwise
+  - accuracy_correct : integrity gate (pred yes/no matches ground-truth label)
+  - think_reward     : used <think> at least once
+  - tool_reward      : min((1 + tool_calls) / hop, 1.0) if calls match responses
+                       hop==1 → 1.0 (no search needed)
+  - ans_reward       : output is yes or no (always 1.0 when gate passes)
 """
 
 import re
@@ -48,31 +41,9 @@ def extract_answer(response: str) -> str:
     return matches[-1].strip() if matches else ""
 
 
-def compute_verifier_format_score(response: str, hop: int) -> float:
-    think_reward = 1.0 if THINK_PATTERN.search(response) else 0.0
-
-    tool_calls = len(TOOL_CALL_PATTERN.findall(response))
-    tool_responses = len(TOOL_RESPONSE_PATTERN.findall(response))
-
-    if hop == 1:
-        tool_reward = 1.0
-    elif tool_calls == tool_responses and tool_calls > 0:
-        tool_reward = min((1 + tool_calls) / hop, 1.0)
-    else:
-        tool_reward = 0.0
-
-    ans = normalize_answer(extract_answer(response))
-    ans_reward = 1.0 if ans in ["yes", "no"] else 0.0
-
-    if ans_reward == 0.0:
-        return 0.0
-
-    return (think_reward + tool_reward + ans_reward) / 3
-
-
 def compute_verifier_score(data_sources, solution_strs, ground_truths, extra_infos, **kwargs):
     """
-    Reward = 0.5 * format_reward + 0.5 * accuracy_reward
+    Reward = (1 + think + tool + ans) / 4  if accuracy_correct else 0.0
     Returns a list of float scores (batch manager interface).
     """
     scores = []
@@ -85,9 +56,25 @@ def compute_verifier_score(data_sources, solution_strs, ground_truths, extra_inf
             label = ""
 
         pred = normalize_answer(extract_answer(response))
-        accuracy_reward = 1.0 if pred == label else 0.0
-        format_reward = compute_verifier_format_score(response, hop)
+        accuracy_correct = pred == label
 
-        scores.append(0.5 * format_reward + 0.5 * accuracy_reward)
+        # think_reward
+        think_reward = 1.0 if THINK_PATTERN.search(response) else 0.0
+
+        # tool_reward (same logic as challenger)
+        tool_calls = len(TOOL_CALL_PATTERN.findall(response))
+        tool_responses = len(TOOL_RESPONSE_PATTERN.findall(response))
+        if hop == 1:
+            tool_reward = 1.0
+        elif tool_calls == tool_responses and tool_calls > 0:
+            tool_reward = min((1 + tool_calls) / hop, 1.0)
+        else:
+            tool_reward = 0.0
+
+        # ans_reward: yes or no format
+        ans_reward = 1.0 if pred in ["yes", "no"] else 0.0
+
+        score = sum([1, think_reward, tool_reward, ans_reward]) / 4 if accuracy_correct else 0.0
+        scores.append(score)
 
     return scores

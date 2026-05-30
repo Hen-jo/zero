@@ -71,8 +71,11 @@ def compute_verifier_score(data_sources, solution_strs, ground_truths, extra_inf
         else:
             tool_reward = 0.0
 
-        # ans_reward: yes or no format
-        ans_reward = 1.0 if pred in ["yes", "no"] else 0.0
+        # ans_reward: yes or no format, but requires search evidence for hop > 1
+        if hop > 1 and tool_calls == 0:
+            ans_reward = 0.0
+        else:
+            ans_reward = 1.0 if pred in ["yes", "no"] else 0.0
 
         score = sum([1, think_reward, tool_reward, ans_reward]) / 4 if accuracy_correct else 0.0
         scores.append(score)

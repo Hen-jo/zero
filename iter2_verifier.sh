@@ -177,7 +177,7 @@ python -m verl.trainer.main_ppo \
     data.train_files="$TRAIN_DATA" \
     data.val_files="$VAL_DATA" \
     data.train_batch_size=256 \
-    data.max_prompt_length=512 \
+    data.max_prompt_length=2048 \
     algorithm.use_kl_in_reward=False \
     algorithm.adv_estimator=${algorithm} \
     actor_rollout_ref.model.path=$CHALLENGER_CKPT \

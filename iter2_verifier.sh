@@ -179,7 +179,7 @@ python -m verl.trainer.main_ppo \
     data.train_batch_size=256 \
     data.max_prompt_length=2048 \
     algorithm.use_kl_in_reward=True \
-    algorithm.kl_coef=0.05 \
+    +algorithm.kl_coef=0.05 \
     algorithm.adv_estimator=${algorithm} \
     actor_rollout_ref.model.path=$CHALLENGER_CKPT \
     actor_rollout_ref.actor.grad_clip=0.1 \

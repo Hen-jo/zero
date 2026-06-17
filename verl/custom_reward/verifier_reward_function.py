@@ -77,7 +77,13 @@ def compute_verifier_score(data_sources, solution_strs, ground_truths, extra_inf
         else:
             ans_reward = 1.0 if pred in ["yes", "no"] else 0.0
 
-        score = sum([1, think_reward, tool_reward, ans_reward]) / 4 if accuracy_correct else 0.0
+        # Fix 1: format reward is decoupled from accuracy gate.
+        # tool/think rewards are always given so the model never abandons tool use
+        # just because the final answer happened to be wrong.
+        # accuracy_score includes ans_reward (ans format only matters when correct).
+        format_score = (think_reward + tool_reward) / 2
+        accuracy_score = (1.0 + ans_reward) / 2 if accuracy_correct else 0.0
+        score = 0.4 * format_score + 0.6 * accuracy_score
         scores.append(score)
 
     return scores

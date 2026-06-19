@@ -1,16 +1,13 @@
 """
-verifier_reward_function.py
+verifier_reward_function.py  —  Option C: Answer + Verdict
 
-Reward function for verifier GRPO training.
+Output format: <answer>CORRECT_ANSWER. yes/no</answer>
+  e.g. <answer>Auburn University. no</answer>
+       <answer>Paris. yes</answer>
 
-Same structure as compute_challenger_format_scores:
-  final_score = (1 + think + tool + ans) / 4  if accuracy_correct else 0
-
-  - accuracy_correct : integrity gate (pred yes/no matches ground-truth label)
-  - think_reward     : used <think> at least once
-  - tool_reward      : min((1 + tool_calls) / hop, 1.0) if calls match responses
-                       hop==1 → 1.0 (no search needed)
-  - ans_reward       : output is yes or no (always 1.0 when gate passes)
+Reward = (1 + think + tool + em_score) / 4   (binary gate 없음)
+  - em_score   : extracted factual answer vs ground truth (EM)
+  - think/tool : 항상 적용, accuracy에 무관하게 tool use 강제 유지
 """
 
 import re
@@ -21,19 +18,24 @@ THINK_PATTERN = re.compile(r"<think>.*?</think>", re.DOTALL)
 TOOL_CALL_PATTERN = re.compile(r"<tool_call>.*?</tool_call>", re.DOTALL)
 TOOL_RESPONSE_PATTERN = re.compile(r"<tool_response>.*?</tool_response>", re.DOTALL)
 
+VERDICT_SUFFIXES = [". yes", ". no", ".yes", ".no", " yes", " no"]
+
 
 def normalize_answer(s):
     def remove_articles(text):
         return re.sub(r"\b(a|an|the)\b", " ", text)
-
     def white_space_fix(text):
         return " ".join(text.split())
-
     def remove_punc(text):
         exclude = set(string.punctuation)
         return "".join(ch for ch in text if ch not in exclude)
-
     return white_space_fix(remove_articles(remove_punc(s.lower())))
+
+
+def em_check(prediction, golden_answer):
+    if not golden_answer:
+        return 0.0
+    return 1.0 if normalize_answer(prediction) == normalize_answer(golden_answer) else 0.0
 
 
 def extract_answer(response: str) -> str:
@@ -41,27 +43,48 @@ def extract_answer(response: str) -> str:
     return matches[-1].strip() if matches else ""
 
 
+def extract_factual_answer(answer_text: str) -> str:
+    """'CORRECT_ANSWER. yes/no' 에서 factual 부분만 추출."""
+    text = answer_text.strip()
+    for suffix in VERDICT_SUFFIXES:
+        if text.lower().endswith(suffix):
+            return text[:-len(suffix)].strip().rstrip(".")
+    return text
+
+
+def extract_verdict(answer_text: str) -> str:
+    """'CORRECT_ANSWER. yes/no' 에서 verdict(yes/no) 추출."""
+    text = answer_text.strip().lower()
+    for suffix in [". yes", " yes", ".yes"]:
+        if text.endswith(suffix):
+            return "yes"
+    for suffix in [". no", " no", ".no"]:
+        if text.endswith(suffix):
+            return "no"
+    norm = normalize_answer(text)
+    return norm if norm in ["yes", "no"] else ""
+
+
 def compute_verifier_score(data_sources, solution_strs, ground_truths, extra_infos, **kwargs):
     """
-    Reward = (1 + think + tool + ans) / 4  if accuracy_correct else 0.0
-    Returns a list of float scores (batch manager interface).
+    Reward = (1 + think + tool + em_score) / 4   — binary gate 없음
+    ground_truth["target"] = 실제 정답 문자열 (e.g. "Auburn University")
     """
     scores = []
     for response, gt, data_source in zip(solution_strs, ground_truths, data_sources):
         hop = int(data_source.split("_")[-1])
 
         try:
-            label = str(list(gt["target"])[0]).lower().strip()
+            ground_truth_answer = str(list(gt["target"])[0]).strip()
         except Exception:
-            label = ""
+            ground_truth_answer = ""
 
-        pred = normalize_answer(extract_answer(response))
-        accuracy_correct = pred == label
+        answer_text = extract_answer(response)
+        factual_answer = extract_factual_answer(answer_text)
+        em_score = em_check(factual_answer, ground_truth_answer)
 
-        # think_reward
         think_reward = 1.0 if THINK_PATTERN.search(response) else 0.0
 
-        # tool_reward (same logic as challenger)
         tool_calls = len(TOOL_CALL_PATTERN.findall(response))
         tool_responses = len(TOOL_RESPONSE_PATTERN.findall(response))
         if hop == 1:
@@ -71,19 +94,7 @@ def compute_verifier_score(data_sources, solution_strs, ground_truths, extra_inf
         else:
             tool_reward = 0.0
 
-        # ans_reward: yes or no format, but requires search evidence for hop > 1
-        if hop > 1 and tool_calls == 0:
-            ans_reward = 0.0
-        else:
-            ans_reward = 1.0 if pred in ["yes", "no"] else 0.0
-
-        # Fix 1: format reward is decoupled from accuracy gate.
-        # tool/think rewards are always given so the model never abandons tool use
-        # just because the final answer happened to be wrong.
-        # accuracy_score includes ans_reward (ans format only matters when correct).
-        format_score = (think_reward + tool_reward) / 2
-        accuracy_score = (1.0 + ans_reward) / 2 if accuracy_correct else 0.0
-        score = 0.4 * format_score + 0.6 * accuracy_score
+        score = (1 + think_reward + tool_reward + em_score) / 4
         scores.append(score)
 
     return scores

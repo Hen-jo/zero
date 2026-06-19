@@ -1,15 +1,12 @@
 """
-verifier_data.py
+verifier_data.py  —  Option C: Answer + Verdict
 
-Creates verifier training data from full solver predictions.
-
-The verifier's task:
+Verifier task:
   Input : question + solver's proposed answer
-  Output: Is this answer correct? → <answer>yes</answer> or <answer>no</answer>
+  Output: <answer>CORRECT_ANSWER. yes/no</answer>
 
-Data source:
-  solver_pred_path : full parquet from main_solver_generation.py
-                     has 'solver_answer' and 'is_correct' columns for all 33K+ questions
+ground_truth = actual answer string (e.g. "Auburn University")
+  → em_check(factual_answer, ground_truth) 로 reward 계산
 """
 
 import argparse
@@ -27,13 +24,14 @@ VERIFIER_SYSTEM = (
     "you can call a search engine by <tool_call> query </tool_call> and it will return "
     "the top searched results between <tool_response> and </tool_response>. "
     "You can search as many times as you want. "
-    "After verification, determine whether the proposed answer is correct and "
-    "output your judgment as <answer>yes</answer> or <answer>no</answer>."
+    "After verification, output the correct answer followed by your judgment: "
+    "<answer>CORRECT_ANSWER. yes</answer> if the proposed answer is correct, "
+    "or <answer>CORRECT_ANSWER. no</answer> if it is wrong. "
+    "CORRECT_ANSWER must be the actual answer to the question based on your search."
 )
 
 
 def extract_question(prompt_messages) -> str:
-    """Extract the question text from a prompt message list."""
     for msg in prompt_messages:
         if isinstance(msg, dict) and msg.get("role") == "user":
             content = msg.get("content", "")
@@ -41,6 +39,18 @@ def extract_question(prompt_messages) -> str:
             if m:
                 return m.group(1).strip()
             return content.strip()
+    return ""
+
+
+def extract_ground_truth(row) -> str:
+    """reward_model 필드에서 실제 정답 추출."""
+    try:
+        rm = row.get("reward_model", {})
+        if isinstance(rm, dict):
+            target = rm.get("ground_truth", {}).get("target", [])
+            return str(list(target)[0]).strip()
+    except Exception:
+        pass
     return ""
 
 
@@ -53,12 +63,11 @@ def make_verifier_prompt(question: str, proposed_answer: str) -> list:
     return [{"role": "user", "content": content}]
 
 
-
-def make_row(base_row: dict, question: str, proposed_answer: str, is_correct: bool) -> dict:
+def make_row(base_row: dict, question: str, proposed_answer: str, ground_truth_answer: str) -> dict:
     row = copy.deepcopy(base_row)
     row["prompt"] = make_verifier_prompt(question, proposed_answer)
     row["reward_model"] = {
-        "ground_truth": {"target": np.array(["yes" if is_correct else "no"])},
+        "ground_truth": {"target": np.array([ground_truth_answer])},
         "style": "rule",
     }
     return row
@@ -66,14 +75,10 @@ def make_row(base_row: dict, question: str, proposed_answer: str, is_correct: bo
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--gen_data_path", required=True,
-                        help="challenger gen data parquet (for question extraction fallback)")
-    parser.add_argument("--solver_pred_path", required=True,
-                        help="full solver prediction parquet (has solver_answer + is_correct)")
-    parser.add_argument("--local_dir", required=True,
-                        help="output directory for train.parquet")
-    parser.add_argument("--max_samples", type=int, default=None,
-                        help="if set, stratified-sample this many rows by data_source (hop ratio preserved)")
+    parser.add_argument("--gen_data_path", required=True)
+    parser.add_argument("--solver_pred_path", required=True)
+    parser.add_argument("--local_dir", required=True)
+    parser.add_argument("--max_samples", type=int, default=None)
     args = parser.parse_args()
 
     solver_pred = pd.read_parquet(args.solver_pred_path)
@@ -81,20 +86,18 @@ def main():
 
     if "solver_answer" not in solver_pred.columns or "is_correct" not in solver_pred.columns:
         raise ValueError(
-            "solver_pred_path must have 'solver_answer' and 'is_correct' columns. "
-            "Run main_solver_generation.py first."
+            "solver_pred_path must have 'solver_answer' and 'is_correct' columns."
         )
 
     records = []
-    n_yes = 0
-    n_no = 0
+    n_correct = 0
+    n_wrong = 0
     n_skip = 0
 
     for _, row in solver_pred.iterrows():
         solver_answer = str(row["solver_answer"]).strip()
         is_correct = bool(row["is_correct"])
 
-        # Skip rows where solver produced no answer
         if not solver_answer:
             n_skip += 1
             continue
@@ -104,18 +107,22 @@ def main():
             n_skip += 1
             continue
 
-        records.append(make_row(row.to_dict(), question, solver_answer, is_correct))
-        if is_correct:
-            n_yes += 1
-        else:
-            n_no += 1
+        gt_answer = extract_ground_truth(row)
+        if not gt_answer:
+            n_skip += 1
+            continue
 
-    print(f"[verifier_data] yes={n_yes}, no={n_no}, skipped={n_skip}")
+        records.append(make_row(row.to_dict(), question, solver_answer, gt_answer))
+        if is_correct:
+            n_correct += 1
+        else:
+            n_wrong += 1
+
+    print(f"[verifier_data] correct={n_correct}, wrong={n_wrong}, skipped={n_skip}")
 
     train_df = pd.DataFrame(records)
 
     if args.max_samples and args.max_samples < len(train_df):
-        # Stratified sampling by data_source to preserve hop ratio
         if "data_source" in train_df.columns:
             sampled = (
                 train_df.groupby("data_source", group_keys=False)
@@ -124,13 +131,12 @@ def main():
                     random_state=42
                 ))
             )
-            # trim/pad to exact max_samples due to rounding
             if len(sampled) > args.max_samples:
                 sampled = sampled.sample(n=args.max_samples, random_state=42)
             train_df = sampled
         else:
             train_df = train_df.sample(n=args.max_samples, random_state=42)
-        print(f"[verifier_data] Sampled {len(train_df)} / max_samples={args.max_samples} (hop ratio preserved)")
+        print(f"[verifier_data] Sampled {len(train_df)} / max_samples={args.max_samples}")
 
     train_df = train_df.sample(frac=1, random_state=42).reset_index(drop=True)
 

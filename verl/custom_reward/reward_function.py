@@ -1,5 +1,6 @@
 import re
 import json
+import random
 import string
 import logging
 
@@ -18,6 +19,18 @@ import verl.utils.torch_functional as verl_F
 # triton이 CUDA 드라이버를 초기화하려 함. Ray CPU worker에는 CUDA가 없으므로
 # 모듈 레벨 임포트를 피하고 함수 내부에서 지연 임포트함.
 from verl.prompts import *
+
+VERIFIER_PROMPT_MAX_LENGTH = 512
+VERIFIER_SYSTEM = (
+    "You are given a question and a proposed answer. "
+    "You must conduct reasoning inside <think> and </think> first every time you get new information. "
+    "After reasoning, if you need to look up information to verify the answer, "
+    "you can call a search engine by <tool_call> query </tool_call> and it will return "
+    "the top searched results between <tool_response> and </tool_response>. "
+    "You can search as many times as you want. "
+    "After verification, determine whether the proposed answer is correct and "
+    "output your judgment as <answer>yes</answer> or <answer>no</answer>."
+)
 
 
 logger = logging.getLogger(__file__)
@@ -271,6 +284,63 @@ def compute_challenger_score_batch(data_sources, solution_strs, ground_truths, e
     final_scores = [0.5 * x for x in format_scores]
     for idx, score in zip(gen_batch_ids, solver_scores):
         final_scores[idx] += score
+
+    # ── Backward Verification (two-phase rollout) ────────────────────────────
+    # If the rollout was two-phase, the response contains a PHASE_SEPARATOR
+    # marking the boundary between forward (question gen) and backward (verify).
+    # We extract the Phase 2 yes/no and reward the challenger for correct judgment.
+    PHASE_SEPARATOR = "[VERIFY]"
+    verifier_lambda = float(kwargs.get("verifier_lambda", 0.2))
+    verifier_base_url = None  # not used in two-phase mode
+
+    # Parse Phase 2 (backward verification) from two-phase rollout responses
+    verification_rewards = {}
+    answer_pat = re.compile(r"<answer>(.*?)</answer>", re.DOTALL)
+    proposed_pat = re.compile(r"Proposed answer:\s*(.+?)(?:\n|$)", re.DOTALL)
+    n_correct = 0
+
+    for i, response in enumerate(responses):
+        sep_pos = response.find(PHASE_SEPARATOR)
+        if sep_pos < 0:
+            continue  # single-phase rollout — skip
+
+        phase2_text = response[sep_pos:]
+
+        # Extract solver's proposed answer from separator header
+        proposed_matches = proposed_pat.findall(phase2_text)
+        if not proposed_matches:
+            continue
+        solver_answer = proposed_matches[0].strip()
+
+        # Ground truth: was the solver's answer correct?
+        challenger_answer = raw_ans[i]
+        label = em_check(solver_answer, challenger_answer)
+
+        # Extract verdict from "ANSWER. yes/no" format (Option C)
+        ans_matches = answer_pat.findall(phase2_text)
+        if ans_matches:
+            ans_text = ans_matches[-1].strip().lower()
+            if ans_text.endswith(". yes") or ans_text.endswith(" yes") or ans_text.endswith(".yes"):
+                pred = "yes"
+            elif ans_text.endswith(". no") or ans_text.endswith(" no") or ans_text.endswith(".no"):
+                pred = "no"
+            else:
+                pred = normalize_answer(ans_text)
+        else:
+            pred = ""
+        expected = "yes" if label else "no"
+
+        reward = verifier_lambda if pred == expected else 0.0
+        verification_rewards[i] = reward
+        final_scores[i] += reward
+        if pred == expected:
+            n_correct += 1
+
+    if verification_rewards:
+        print(
+            f"🔍 Backward verification: {n_correct}/{len(verification_rewards)} correct "
+            f"(λ={verifier_lambda}, avg={np.mean(list(verification_rewards.values())):.3f})"
+        )
 
     print(
         f"🚀 Raw format rewards: Avg {np.mean(format_scores)}, Max {np.max(format_scores)}\n"

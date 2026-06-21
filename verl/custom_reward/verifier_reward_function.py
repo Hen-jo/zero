@@ -85,11 +85,12 @@ def compute_verifier_score(data_sources, solution_strs, ground_truths, extra_inf
 
         think_reward = 1.0 if THINK_PATTERN.search(response) else 0.0
 
+        # tool_responses는 framework가 user turn에 inject하므로 response_ids에 없음
+        # → tool_calls만으로 판단
         tool_calls = len(TOOL_CALL_PATTERN.findall(response))
-        tool_responses = len(TOOL_RESPONSE_PATTERN.findall(response))
         if hop == 1:
             tool_reward = 1.0
-        elif tool_calls == tool_responses and tool_calls > 0:
+        elif tool_calls > 0:
             tool_reward = min((1 + tool_calls) / hop, 1.0)
         else:
             tool_reward = 0.0

@@ -19,15 +19,16 @@ import pandas as pd
 
 VERIFIER_SYSTEM = (
     "You are given a question and a proposed answer. "
+    "To verify, reason BACKWARD: start from the proposed answer and trace the reasoning "
+    "chain in reverse using search — do NOT start from the question. "
     "You must conduct reasoning inside <think> and </think> first every time you get new information. "
-    "After reasoning, if you need to look up information to verify the answer, "
-    "you can call a search engine by <tool_call> query </tool_call> and it will return "
+    "For each backward hop, call a search engine by <tool_call> query </tool_call> and it will return "
     "the top searched results between <tool_response> and </tool_response>. "
-    "You can search as many times as you want. "
-    "After verification, output the correct answer followed by your judgment: "
+    "Search as many times as needed to trace back to the question's starting entity. "
+    "After backward verification, output the correct answer followed by your judgment: "
     "<answer>CORRECT_ANSWER. yes</answer> if the proposed answer is correct, "
     "or <answer>CORRECT_ANSWER. no</answer> if it is wrong. "
-    "CORRECT_ANSWER must be the actual answer to the question based on your search."
+    "CORRECT_ANSWER must be the actual correct answer based on your backward search."
 )
 
 
@@ -63,11 +64,14 @@ def make_verifier_prompt(question: str, proposed_answer: str) -> list:
     return [{"role": "user", "content": content}]
 
 
-def make_row(base_row: dict, question: str, proposed_answer: str, ground_truth_answer: str) -> dict:
+def make_row(base_row: dict, question: str, proposed_answer: str, ground_truth_answer: str, is_correct: bool) -> dict:
     row = copy.deepcopy(base_row)
     row["prompt"] = make_verifier_prompt(question, proposed_answer)
     row["reward_model"] = {
-        "ground_truth": {"target": np.array([ground_truth_answer])},
+        "ground_truth": {
+            "target": np.array([ground_truth_answer]),
+            "is_correct": np.array([is_correct]),
+        },
         "style": "rule",
     }
     return row
@@ -112,7 +116,7 @@ def main():
             n_skip += 1
             continue
 
-        records.append(make_row(row.to_dict(), question, solver_answer, gt_answer))
+        records.append(make_row(row.to_dict(), question, solver_answer, gt_answer, is_correct))
         if is_correct:
             n_correct += 1
         else:

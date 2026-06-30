@@ -72,8 +72,9 @@ def extract_verdict(answer_text: str) -> str:
 
 def compute_verifier_score(data_sources, solution_strs, ground_truths, extra_infos, **kwargs):
     """
-    Reward = (1 + think + tool + em_score) / 4   — binary gate 없음
-    ground_truth["target"] = 실제 정답 문자열 (e.g. "Auburn University")
+    Reward = (1 + think + tool + em_score + verdict_score) / 5
+    ground_truth["target"]     = 실제 정답 문자열 (e.g. "Auburn University")
+    ground_truth["is_correct"] = solver 답변 정오 여부 (bool)
     """
     scores = []
     for response, gt, data_source in zip(solution_strs, ground_truths, data_sources):
@@ -84,6 +85,11 @@ def compute_verifier_score(data_sources, solution_strs, ground_truths, extra_inf
         except Exception:
             ground_truth_answer = ""
 
+        try:
+            is_correct = bool(list(gt["is_correct"])[0])
+        except Exception:
+            is_correct = None
+
         answer_text = extract_answer(response)
         factual_answer = extract_factual_answer(answer_text)
         em_score = em_check(factual_answer, ground_truth_answer)
@@ -92,13 +98,22 @@ def compute_verifier_score(data_sources, solution_strs, ground_truths, extra_inf
 
         tool_calls = len(TOOL_CALL_PATTERN.findall(response))
         if hop == 1:
-            tool_reward = 1.0
+            tool_reward = 1.0 if tool_calls > 0 else 0.0
         elif tool_calls > 0:
             tool_reward = min((1 + tool_calls) / hop, 1.0)
         else:
             tool_reward = 0.0
 
-        score = (1 + think_reward + tool_reward + em_score) / 4
+        # verdict_score: yes/no가 실제 is_correct label과 일치하는지
+        # em_score가 있어야만 유효 (yes/no shortcut 방지)
+        if is_correct is not None and em_score > 0:
+            verdict = extract_verdict(answer_text)
+            expected = "yes" if is_correct else "no"
+            verdict_score = 1.0 if verdict == expected else 0.0
+        else:
+            verdict_score = 0.0
+
+        score = (1 + think_reward + tool_reward + em_score + verdict_score) / 5
         scores.append(score)
 
     return scores

@@ -1,103 +1,137 @@
-# Dr. Zero: Self-Evolving Search Agents without Training Data
+<div align="center">
 
-[![Paper](https://img.shields.io/badge/Paper-arXiv:2601.07055-b31b1b.svg)](https://arxiv.org/abs/2601.07055)
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+<img src="assets/image1.png" width="700"/>
 
-This repository contains the code for [**Dr. Zero: Self-Evolving Search Agents without Training Data**](https://arxiv.org/abs/2601.07055). In this work, we introduce Dr. Zero, a framework enabling search agents to effectively self-evolve without any training data. In particular, we design a self-evolution feedback loop where a proposer generates diverse questions to train a solver initialized from the same base model. As the solver evolves, it incentivizes the proposer to produce increasingly difficult yet solvable tasks, thus establishing an automated curriculum to refine both agents. To enhance training efficiency, we also introduce hop-grouped relative policy optimization (HRPO). This method clusters structurally similar questions to construct group-level baselines, effectively minimizing the sampling overhead in evaluating each query's individual difficulty and solvability. Consequently, HRPO significantly reduces the compute requirements for solver training without compromising performance or stability. Extensive experiment results demonstrate that the data-free Dr. Zero matches or surpasses fully supervised search agents, proving that complex reasoning and search capabilities can emerge solely through self-evolution.
+# 강화학습 기반 자기 대전을 통한 다중 홉 질의응답 역추론 성능 향상
 
-## 🚀 Overview
+**Don't Just Ask — Verify: Rethinking Reward Signals for Self-Play Multi-hop QA**
 
-The core idea is to bootstrap a search agent from a base model (e.g., Qwen or Llama) via iterative self-evolution: the agent synthesizes tasks and then learns to solve them in a multi-turn, tool-using environment.
+조재헝 · 윤재욱 · 이상호 · 하승구 · 정의량 · 나욱진
 
-*   **Proposer:** A question generation agent that aims to create hard yet solvable questions and thereby driving the solver improvement.
-*   **Solver:** The primary search agent that is trained with synthetic data from the proposer to answer challenging questions using the search tool.
-*   **Zero-Data Initialization:** The process starts with zero training data and relies solely on an external search engine (e.g., Wikipedia passage retriever).
+현대자동차그룹 CVLCM AI팀
 
-<img src=verl/intro.png width=1000>
+[![GitLab](https://img.shields.io/badge/Code-GitLab-orange)](https://gitlab.hmc.co.kr/cvlcmai/2026_hmc_paper/vef_zero)
 
-## 🛠️ Setup & Installation
+</div>
 
-### 1. Environment
+---
 
-Ensure you have a Python environment with the necessary dependencies (PyTorch, transformers, faiss-gpu, verl==0.5.0, etc.). The rest of the dependencies can be found [here](https://github.com/volcengine/verl/blob/v0.5.0/requirements.txt) and [here](https://github.com/volcengine/verl/blob/v0.5.0/requirements_sglang.txt).
+## 개요
 
-### 2. Search Engine
+Self-play 프레임워크는 어려운 질문을 생성하는 **제안자(Proposer)**와 이를 푸는 **해결자(Solver)**를 공동 학습시키지만, 제안자의 보상이 단순히 solver의 실패율에만 의존할 경우 **논리적으로 불완전하거나 근거가 약한 질문**을 생성하는 방향으로 학습될 수 있습니다.
 
-This framework relies on a local server with a retriever model. Prepare the corpus and build the index before training.
+본 연구에서는 **역방향 검증자(Backward Verifier)**를 도입합니다. 검증자는 hop 체인을 역방향으로 추적하는 검색 기반 추론을 통해, 답변에서 출발하여 원래 질문의 시작 엔티티까지 복원되지 않는 질문에 대해 제안자에게 패널티를 부여합니다.
 
-**Download & Index Corpus:**
-Execute the following commands to download the Wikipedia English dump and build the faiss index for the retriever (default: `intfloat/e5-base-v2`). More details can be found under the search folder and the [Search-R1 repository](https://github.com/PeterGriffinJin/Search-R1).
+---
 
-```bash
-save_path=./corpus
-python scripts/download.py --save_path $save_path
-cat $save_path/part_* > $save_path/e5_Flat.index
-gzip -d $save_path/wiki-18.jsonl.gz
+## 핵심 아이디어
+
+<img src="assets/image2.png" width="650"/>
+
+기존 접근법은 solver가 정답을 맞히는지(순방향)만 검증합니다. 본 연구는 **역방향 검증**을 추가합니다:
+
+- **유효한 질문**: 정답에서 역방향 추적 시 질문의 시작 엔티티까지 회복 가능
+- **유효하지 않은 질문**: 역방향 추적 실패 → 제안자에게 낮은 보상
+
+이를 통해 제안자는 논리적으로 완결된 hop 체인을 갖춘 질문을 생성하도록 유도됩니다.
+
+---
+
+## 방법론
+
+### 학습 파이프라인
+
+각 iteration마다 세 단계를 반복합니다:
+
+1. **Proposer 학습**: 문서에서 multi-hop 질문과 답변 생성
+2. **Solver 학습**: 검색 기반 추론으로 질문에 답변
+3. **Verifier 학습**: 제안된 답변에서 역방향으로 hop 체인 추적, 검증 결과를 proposer 보상에 반영
+
+### Verifier 보상 설계
+
+```
+Reward = (1 + think_reward + tool_reward + em_score + verdict_score) / 5
 ```
 
-## 🏃 Iterative Self-Evolution Workflow
+- **em_score**: 검색을 통해 찾은 정답과 ground truth의 일치 여부
+- **verdict_score**: yes/no 판단의 정확도 (is_correct label과 비교)
+- **tool_reward**: 역방향 검색 수행 여부 (단순 yes/no shortcut 방지)
 
-The training process proceeds in iterations (Iter 1, Iter 2, Iter 3...). Each iteration typically consists of three phases:
+---
 
-### Phase 0: Initial Data Preparation
+## 실험 결과
 
-Before the first iteration, prepare the initial prompts for training and the benchmarks for evaluation.
+<img src="assets/image3.png" width="700"/>
 
-```bash
-python process_train.py --local_dir ./data
-python process_test.py --local_dir ./data
+7개 QA 벤치마크에서 DrZero 대비 일관된 성능 향상:
+
+| 지표 | DrZero | **Ours** |
+|---|---|---|
+| 평균 Exact Match | 0.326 | **0.343** |
+| LLM-Judge 유효성 | 16.1% | **25.3%** |
+| HNR | 60.7% | **69.7%** |
+
+특히 **다중 홉 벤치마크(2Wiki, Bamboogle)**에서 가장 큰 성능 향상을 보입니다.
+
+---
+
+## 코드 구조
+
+```
+├── iter{1,2,3}_challenger.sh   # Proposer 학습
+├── iter{1,2,3}_solver.sh       # Solver 학습
+├── iter{1,2,3}_verifier.sh     # Verifier 학습
+├── iter{1,2,3}_gen_data.sh     # 데이터 생성
+├── verl/custom_reward/
+│   ├── reward_function.py          # Proposer/Challenger 보상 함수
+│   └── verifier_reward_function.py # Verifier 보상 함수
+├── scripts/data_process/
+│   └── verifier_data.py        # Verifier 학습 데이터 생성
+├── LLMjudge/                   # LLM 기반 질문 품질 평가
+└── search/                     # 검색 서버
 ```
 
-### Iteration 1
+---
 
-**1. Train Proposer:**
-Train the proposer agent to generate challenging yet manageable questions for the base solver.
+## 환경 설정
 
 ```bash
+# 저장소 클론
+git clone https://gitlab.hmc.co.kr/cvlcmai/2026_hmc_paper/vef_zero.git
+cd vef_zero
+
+# 환경 설치
+bash setup.sh
+
+# 검색 인덱스 구축
+bash search/build_index.sh
+```
+
+---
+
+## 학습 실행
+
+```bash
+# Iter 1: Proposer → Solver → Verifier 순서로 실행
 bash iter1_challenger.sh
-```
-
-**2. Synthesize Data:**
-Generate training data using the learnt proposer model. Parameters such as model path and sample size can be specified in the script.
-
-```bash
-bash iter1_gen_data.sh
-```
-
-**3. Train Solver:**
-Train the solver agent on the generated synthetic data using GRPO. This optimizes the solver's ability to search and reason over challenging questions.
-
-```bash
 bash iter1_solver.sh
+bash iter1_verifier.sh
+
+# Iter 2
+bash iter2_gen_data.sh   # Proposer가 생성한 질문으로 데이터 구성
+bash iter2_challenger.sh
+bash iter2_solver.sh
+bash iter2_verifier.sh
 ```
 
-**4. Convert Solver to HF Format:**
-Specify the trained model path and convert the FSDP checkpoint to the HF format. This allows the proposer to load the latest solver for reward estimation in the next training iteration.
+---
 
-```bash
-bash convert.sh
-```
+## 키워드
 
-### Subsequent Iterations (Iter 2, Iter 3...)
+Self-Play · 다중 홉 질의응답 · 역방향 검증 · 강화학습 · 검색 증강 생성 · Proposer-Solver
 
-Repeat the process using the scripts for the respective iteration. The model checkpoints from the previous iteration are used as the starting point for the next. You may need to modify the iteration number and model paths in the scripts.
+---
 
-*   `iter2_challenger.sh` -> `iter2_gen_data.sh` -> `iter2_solver.sh` -> `convert.sh`
-*   `iter3_challenger.sh` -> `iter3_gen_data.sh` -> `iter3_solver.sh` -> `convert.sh`
-
-## Citation
-If you find Dr. Zero interesting, please consider citing our paper :)
-```
-@article{yue2026dr,
-  title={Dr. Zero: Self-Evolving Search Agents without Training Data},
-  author={Yue, Zhenrui and Upasani, Kartikeya and Yang, Xianjun and Ge, Suyu and Nie, Shaoliang and Mao, Yuning and Liu, Zhe and Wang, Dong},
-  journal={arXiv preprint arXiv:2601.07055},
-  year={2026}
-}
-```
-
-## License
-The code is released under a non-commercial license. See [LICENSE](LICENSE.md) for more details.
-
-## Acknowledgements
-During the implementation we base our code mostly on [Search-R1](https://github.com/PeterGriffinJin/Search-R1) and [VeRL](https://github.com/volcengine/verl). Many thanks to these awesome authors for their great work!
+<div align="center">
+현대자동차그룹 CVLCM AI팀 | 2026 사내 학술대회
+</div>

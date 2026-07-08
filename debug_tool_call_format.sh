@@ -83,12 +83,13 @@ def analyze(text, label):
     print(f"  <answer>   존재: {'<answer>'   in text}")
 
 print(f"\n[로딩] {MODEL_PATH}")
-tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH, trust_remote_code=True)
+tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH, trust_remote_code=True, local_files_only=True)
 model = AutoModelForCausalLM.from_pretrained(
     MODEL_PATH,
     torch_dtype=torch.bfloat16,
     device_map="auto",
     trust_remote_code=True,
+    local_files_only=True,
 )
 model.eval()
 

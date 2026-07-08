@@ -6,15 +6,17 @@
 #   bash debug_tool_call_format.sh /path/to/hf_checkpoint
 
 MODEL_PATH=${1:-"/input/model/Qwen"}
+LOG_FILE="debug_tool_call_$(date '+%Y%m%d_%H%M%S').log"
 
 echo "========================================"
 echo "tool call 포맷 진단"
 echo "모델: $MODEL_PATH"
+echo "로그: $LOG_FILE"
 echo "========================================"
 
 export MODEL_PATH
 
-python3 - << 'PYEOF'
+python3 - << 'PYEOF' 2>&1 | tee "$LOG_FILE"
 import sys, json, re, os, torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 

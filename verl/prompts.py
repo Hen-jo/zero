@@ -35,12 +35,12 @@ You are an expert in question generation. Craft one challenging, deterministic q
   - Stop at Hop n: Continue this process until you have exactly n hops. Hop n must be a single, canonical final answer.
 3. Reasoning & Search Protocol
   - Always reason inside `<think> ... </think>` when you plan connections or receive new information.
-  - For each hop transition that requires external information, issue search query using `<tool_call> ... </tool_call>`.
+  - For each hop transition that requires external information, issue search query using `<tool_call> {"name": "search", "arguments": {"query_list": ["QUERY"]}} </tool_call>`.
   - Search results will be provided between `<tool_response> ... </tool_response>` by the system.
 4. Output Format
   - Emit a numbered sequence of EXACTLY n-1 search steps. For each search i (1 to n-1), produce:
     `<think> Reasoning step i: Identify Hop i in document/search results, formulate query to reach Hop i+1 </think>`
-    `<tool_call> Query to search Hop i+1 </tool_call>`
+    `<tool_call> {"name": "search", "arguments": {"query_list": ["Query to search Hop i+1"]}} </tool_call>`
     `[Wait for search results in <tool_response> from system]`
   - After completing all searches and arriving at Hop n, output the question and final answer:
     `<think> Final reasoning step: Confirm the chain is complete with Hop n and formulate the question </think>`
@@ -54,10 +54,10 @@ You are an expert in question generation. Craft one challenging, deterministic q
   `<answer> [Answer (Hop 1)] </answer>`
 2. Example template for Hop n = 3, i.e. 2 searches:
   `<think> [Reasoning step 1: Find Hop 1 in the source document, formulate the query to reach Hop 2] </think>`
-  `<tool_call> [Search query to find Hop 2 based on Hop 1] </tool_call>`
+  `<tool_call> {"name": "search", "arguments": {"query_list": ["Search query to find Hop 2 based on Hop 1"]}} </tool_call>`
   `[Wait for search results in <tool_response> from system]`
   `<think> [Reasoning step 2: Reason on search results to identify Hop 2 and write the next query to find Hop 3] </think>`
-  `<tool_call> [Search query to find Hop 3 based on Hop 2] </tool_call>`
+  `<tool_call> {"name": "search", "arguments": {"query_list": ["Search query to find Hop 3 based on Hop 2"]}} </tool_call>`
   `[Wait for search results in <tool_response> from system]`
   `<think> [Final reasoning step: Confirm Hop 3 in search results and formulate the question starting from Hop 1] </think>`
   `<question> [Question starting with Hop 1, requiring the solver to find Hop 2 to eventually reach the Answer (Hop 3)] </question>`
@@ -80,7 +80,7 @@ DEFAULT_BACKWARD_VERIFIER_PREFIX = (
     "Verify by reasoning BACKWARD: start from the candidate answer and trace each hop in "
     "reverse using search, until you reach the starting entity stated in the question. "
     "Always reason inside <think> and </think>. For each backward hop, call a search engine "
-    "by <tool_call> query </tool_call> and results appear between <tool_response> and "
+    'by <tool_call> {"name": "search", "arguments": {"query_list": ["QUERY"]}} </tool_call> and results appear between <tool_response> and '
     "</tool_response>. After tracing all hops backward, output <answer>YES</answer> if the "
     "candidate answer is correct, or <answer>NO</answer> if it is incorrect. "
     "Question: {question} Candidate Answer: {candidate_answer}"
@@ -90,7 +90,8 @@ DEFAULT_BACKWARD_VERIFIER_PREFIX = (
 DEFAULT_SOLVER_PREFIX = (
   "Answer the given question. You must conduct reasoning inside <think> and </think> "
   "first every time you get new information. After reasoning, if you find you lack "
-  "some knowledge, you can call a search engine by <tool_call> query </tool_call> "
+  'some knowledge, you can call a search engine by '
+  '<tool_call> {"name": "search", "arguments": {"query_list": ["QUERY"]}} </tool_call> '
   "and it will return the top searched results between <tool_response> and "
   "</tool_response>. You can search as many times as your want. If you find no "
   "further external knowledge needed, you can directly provide the answer inside "

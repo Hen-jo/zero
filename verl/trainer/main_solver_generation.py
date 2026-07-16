@@ -2,15 +2,18 @@
 main_solver_generation.py
 
 Run solver inference on the full challenger gen data to produce
-(question, solver_answer, ground_truth, is_correct) pairs for verifier training.
+(question, solver trajectory, solver_answer, ground_truth, is_correct) records
+for verifier training.
 
 Unlike main_generation.py (challenger-only), this script:
   - Preserves the original ground truth from the input dataset
+  - Preserves the complete solver response and its search-query trajectory
   - Extracts the solver's forward-reasoning answer (<answer>...</answer>)
   - Computes EM and saves is_correct flag
-  - Outputs a verifier-compatible parquet
+  - Outputs an inverse-question-reconstruction-compatible parquet
 """
 
+import json
 import os
 import re
 import string
@@ -42,6 +45,7 @@ from verl.utils.model import compute_position_id_with_mask
 from verl.utils.checkpoint.checkpoint_manager import find_latest_ckpt_path
 
 ANSWER_PATTERN = re.compile(r"<answer>(.*?)</answer>", re.DOTALL)
+TOOL_CALL_PATTERN = re.compile(r"<tool_call>(.*?)</tool_call>", re.DOTALL)
 
 
 def normalize_answer(s):
@@ -68,6 +72,60 @@ def em_check(prediction, golden_answers):
 def extract_answer(response: str) -> str:
     matches = ANSWER_PATTERN.findall(response)
     return matches[-1].strip() if matches else ""
+
+
+def _queries_from_tool_payload(payload: str) -> list[str]:
+    """Extract search query strings from one tool-call payload.
+
+    Search-R1/Qwen trajectories normally use JSON function calls, but older
+    trajectories can contain a plain-text query. Keeping this parser tolerant
+    lets the verifier data pipeline use both formats without silently dropping
+    the final hop.
+    """
+    payload = payload.strip()
+    if not payload:
+        return []
+
+    try:
+        parsed = json.loads(payload)
+    except (TypeError, json.JSONDecodeError):
+        return [payload]
+
+    def collect(value) -> list[str]:
+        if isinstance(value, str):
+            return [value.strip()] if value.strip() else []
+        if isinstance(value, list):
+            queries = []
+            for item in value:
+                queries.extend(collect(item))
+            return queries
+        if not isinstance(value, dict):
+            return []
+
+        for key in ("query_list", "queries", "query", "search_query"):
+            if key in value:
+                return collect(value[key])
+        for key in ("arguments", "parameters", "input"):
+            if key in value:
+                queries = collect(value[key])
+                if queries:
+                    return queries
+        return []
+
+    return collect(parsed)
+
+
+def extract_search_queries(response: str) -> list[str]:
+    """Return de-duplicated forward search queries in chronological order."""
+    queries = []
+    seen = set()
+    for payload in TOOL_CALL_PATTERN.findall(response):
+        for query in _queries_from_tool_payload(payload):
+            normalized = " ".join(query.split())
+            if normalized and normalized not in seen:
+                seen.add(normalized)
+                queries.append(normalized)
+    return queries
 
 
 @hydra.main(config_path="config", config_name="ppo_trainer", version_base=None)
@@ -141,6 +199,9 @@ def main_task(config):
 
     all_solver_answers = []
     all_is_correct = []
+    all_solver_responses = []
+    all_solver_search_queries = []
+    all_solver_last_queries = []
 
     for batch_idx in trange(num_batch):
         start = batch_idx * config_batch_size
@@ -209,15 +270,27 @@ def main_task(config):
             solver_ans = extract_answer(response)
             gt = batch_gts[i]
             is_correct = em_check(solver_ans, gt) if gt else False
+            search_queries = extract_search_queries(response)
             all_solver_answers.append(solver_ans)
             all_is_correct.append(is_correct)
+            all_solver_responses.append(response)
+            # JSON keeps the parquet schema stable across pandas/pyarrow
+            # versions and is easy to parse in verifier_data.py.
+            all_solver_search_queries.append(json.dumps(search_queries, ensure_ascii=False))
+            all_solver_last_queries.append(search_queries[-1] if search_queries else "")
 
-            print(f"[{start+i}] pred={solver_ans!r:40s} | correct={is_correct}")
+            print(
+                f"[{start+i}] pred={solver_ans!r:40s} | correct={is_correct} "
+                f"| search_hops={len(search_queries)}"
+            )
 
     # ── Save output ───────────────────────────────────────────────────────
     out_df = dataset.copy()
     out_df["solver_answer"] = all_solver_answers
     out_df["is_correct"] = all_is_correct
+    out_df["solver_response"] = all_solver_responses
+    out_df["solver_search_queries"] = all_solver_search_queries
+    out_df["solver_last_query"] = all_solver_last_queries
 
     acc = sum(all_is_correct) / max(len(all_is_correct), 1)
     print(f"[solver_gen] Solver EM accuracy: {acc:.2%} ({sum(all_is_correct)}/{len(all_is_correct)})")

@@ -6,6 +6,12 @@ set -x
 export HF_DATASETS_CACHE=/tmp/hf_cache
 export HF_HOME=/tmp/hf_home
 
+# Frozen semantic scorer for inverse-question-reconstruction reward.
+# Set these before launching to use a pre-downloaded local checkpoint instead.
+: "${VERIFIER_SBERT_MODEL:=sentence-transformers/all-MiniLM-L6-v2}"
+: "${VERIFIER_SBERT_DEVICE:=cpu}"
+export VERIFIER_SBERT_MODEL VERIFIER_SBERT_DEVICE
+
 fuser -k 8000/tcp 2>/dev/null || true
 fuser -k 8001/tcp 2>/dev/null || true
 

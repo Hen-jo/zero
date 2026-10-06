@@ -16,6 +16,7 @@ Generate responses given a dataset of prompts
 """
 
 import os
+from copy import deepcopy
 import hydra
 import ray
 
@@ -46,6 +47,7 @@ from verl.utils.checkpoint.checkpoint_manager import find_latest_ckpt_path
 
 from verl.prompts import *
 from verl.custom_reward.reward_function import compute_challenger_format_scores
+from verl.utils.verifier_contracts import make_item_id, make_source_id, extract_source_document
 
 
 @hydra.main(config_path="config", config_name="ppo_trainer", version_base=None)
@@ -72,6 +74,9 @@ def run_generation(config) -> None:
 def main_task(config):
     pprint(OmegaConf.to_container(config, resolve=True))  # resolve=True will eval symbol values
     OmegaConf.resolve(config)
+    question_word_limit = config.data.get("question_word_limit", 50)
+    if isinstance(question_word_limit, bool) or not isinstance(question_word_limit, int) or question_word_limit < 0:
+        raise ValueError("data.question_word_limit must be a nonnegative integer (0 preserves full questions)")
 
     local_path = copy_to_local(
         config.actor_rollout_ref.model.path, use_shm=config.actor_rollout_ref.model.get("use_shm", False)
@@ -84,18 +89,23 @@ def main_task(config):
         tokenizer.pad_token = tokenizer.eos_token
 
     dataset = pd.read_parquet(config.data.path)
+    if dataset.empty:
+        raise ValueError("Generation input is empty")
     if config.data.partition is not None:
-        partition_length = len(dataset) // 5
         partition = int(config.data.partition)
         assert 0 < partition <= 5
-        start = partition_length * (partition - 1)
-        end = partition_length * (partition)
+        start = len(dataset) * (partition - 1) // 5
+        end = len(dataset) * partition // 5
         dataset = dataset.iloc[start:end]
         print(f"Using partition {partition}/5, from {start} to {end}")
     
+    dataset = dataset.reset_index(drop=True)
+    if dataset.empty:
+        raise ValueError("Selected generation partition is empty")
     chat_lst = dataset[config.data.prompt_key].tolist()
-    chat_lst = [chat.tolist() for chat in chat_lst]
+    chat_lst = [chat.tolist() if hasattr(chat, "tolist") else chat for chat in chat_lst]
     all_hops = [int(x.split("_")[-1]) for x in dataset.data_source]
+    source_documents = [extract_source_document(chat) for chat in chat_lst]
 
     resource_pool = RayResourcePool(
         process_on_nodes=[config.trainer.n_gpus_per_node] * config.trainer.nnodes
@@ -121,6 +131,7 @@ def main_task(config):
     num_batch = -(-total_samples // config_batch_size)
 
     all_questions, all_answers, all_contexts = [], [], []
+    selected_provenance = []
     for batch_idx in trange(num_batch):
         gen_batch = defaultdict(list)
         batch_chat_lst = chat_lst[batch_idx * config_batch_size : (batch_idx + 1) * config_batch_size]
@@ -198,22 +209,59 @@ def main_task(config):
             )
             sample_idx = np.argmax(format_scores)
 
-            question = " ".join(raw_qs[sample_idx].split()[:50])
+            original_question = raw_qs[sample_idx].strip()
+            question = (" ".join(original_question.split()[:question_word_limit])
+                        if question_word_limit else original_question)
+            if not question or not raw_ans[sample_idx].strip():
+                raise ValueError("Selected generation has an empty question/answer; refusing unverifiable data")
+            selected_provenance.append({
+                "original_question": original_question,
+                "solver_question": question,
+                "question_word_limit": question_word_limit,
+                "question_truncated": bool(question_word_limit and len(original_question.split()) > question_word_limit),
+                "selected_candidate_index": int(sample_idx),
+                "selected_format_score": float(format_scores[sample_idx]),
+                "candidate_format_scores": [float(score) for score in format_scores],
+                "generation_checkpoint": str(config.ckpt_path),
+            })
             all_questions.append(question)
             all_answers.append(raw_ans[sample_idx])
             all_contexts.append(raw_messages[sample_idx])
             print("Question: "+ question)
             print("Answer: "+ raw_ans[sample_idx])
 
-    all_messages = [[{"role": "user", "content": DEFAULT_SOLVER_PREFIX.format(question=q.strip())}] for q in all_questions]
-    for idx, (message, gt, context) in enumerate(zip(all_messages, all_answers, all_contexts)):
-        dataset.iloc[idx].prompt = message
-        dataset.iloc[idx].reward_model['ground_truth']['target'] = [gt]
-        dataset.iloc[idx].metadata = {"raw_context": context}
-    
+    if len(all_questions) != len(dataset):
+        raise ValueError("Generation returned a different number of selected candidates than input rows")
+    # Assemble independent records; avoid chained pandas assignment and nested aliasing.
+    records = []
+    seen_ids = set()
+    for idx, (question, answer, context, provenance) in enumerate(
+        zip(all_questions, all_answers, all_contexts, selected_provenance)
+    ):
+        record = deepcopy(dataset.iloc[idx].to_dict())
+        source_document = source_documents[idx]
+        item_id = make_item_id(question, [answer], source_document)
+        if item_id in seen_ids:
+            raise ValueError(f"Duplicate generated item_id {item_id}; deduplicate explicitly before training")
+        seen_ids.add(item_id)
+        record["prompt"] = [{"role": "user", "content": DEFAULT_SOLVER_PREFIX.format(question=question)}]
+        record["reward_model"]["ground_truth"]["target"] = [answer]
+        record["item_id"] = item_id
+        record["source_id"] = make_source_id(source_document)
+        record["question"] = question
+        record["reference_answers"] = [answer]
+        metadata = record.get("metadata")
+        metadata = dict(metadata) if isinstance(metadata, dict) else {}
+        metadata.update(provenance)
+        metadata.update({"raw_context": context, "source_document": source_document,
+                         "proposed_answer": answer, "schema_version": "verifier_pipeline_v1"})
+        record["metadata"] = metadata
+        records.append(record)
+    dataset = pd.DataFrame(records)
+
     output_dir = os.path.dirname(config.data.output_path)
-    makedirs(output_dir, exist_ok=True)
-    dataset.to_parquet(config.data.output_path)
+    makedirs(output_dir or ".", exist_ok=True)
+    dataset.to_parquet(config.data.output_path, index=False)
 
 
 if __name__ == "__main__":

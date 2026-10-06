@@ -15,6 +15,14 @@ The core idea is to bootstrap a search agent from a base model (e.g., Qwen or Ll
 
 <img src=verl/intro.png width=1000>
 
+## Verifier pipeline status
+
+The backward-verifier extension uses answer-EM proxy supervision, not validated
+reasoning-chain or hop-necessity labels. See the [pipeline integrity guide](docs/verifier-pipeline-integrity.md)
+for stable-ID data contracts, legacy-export restrictions, offline preflight, and
+explicitly opt-in experimental feedback. Existing paper results are not validated
+by these implementation checks.
+
 ## 🛠️ Setup & Installation
 
 ### 1. Environment

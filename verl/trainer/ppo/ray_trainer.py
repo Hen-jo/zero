@@ -1002,18 +1002,23 @@ class RayPPOTrainer:
             f.write(str(self.global_steps))
 
     def _collect_rollout(self, batch: "DataProto"):
-        """마지막 N step의 rollout을 버퍼에 누적한다 (verifier_gen_data 추론 대체용)."""
-        rollout_n = self.config.actor_rollout_ref.rollout.n
-        responses_ids = batch.batch["responses"]            # [N*rollout_n, seq_len]
-        scores = batch.batch["token_level_scores"].sum(-1)  # [N*rollout_n]
+        """Export all candidates by stable IDs, including after token balancing."""
+        from verl.utils.solver_export import build_export_records, final_assistant_response
 
-        n_total = len(responses_ids)
-        for i in range(0, n_total, rollout_n):
-            group_scores = scores[i : i + rollout_n]
-            best_idx = int(group_scores.argmax())
-            best_ids = responses_ids[i + best_idx]
-            response_text = self.tokenizer.decode(best_ids, skip_special_tokens=True)
-            self._rollout_buffer.append({"responses": response_text})
+        fields = batch.non_tensor_batch
+        records = build_export_records(
+            item_ids=fields["item_id"].tolist(),
+            source_ids=fields["source_id"].tolist(),
+            uids=fields["uid"].tolist(),
+            rollout_indices=fields["export_rollout_index"].tolist(),
+            responses=[final_assistant_response(record) for record in fields["messages"]],
+            scores=batch.batch["token_level_scores"].sum(-1).detach().cpu().tolist(),
+            step=int(self.global_steps),
+            expected_n=int(self.config.actor_rollout_ref.rollout.n),
+        )
+        for record, ids in zip(records, batch.batch["responses"]):
+            record["full_response_trace"] = self.tokenizer.decode(ids, skip_special_tokens=True)
+        self._rollout_buffer.extend(records)
 
     def _flush_rollout_buffer(self):
         """누적된 rollout 버퍼를 parquet으로 저장한다."""
@@ -1021,11 +1026,16 @@ class RayPPOTrainer:
         from verl.utils.fs import makedirs
 
         save_path = OmegaConf.select(self.config.trainer, "save_last_rollout_path")
-        if not save_path or not self._rollout_buffer:
+        if not save_path:
             return
+        if not self._rollout_buffer:
+            raise ValueError("Solver export was requested but no rollout records were collected")
 
-        makedirs(os.path.dirname(save_path), exist_ok=True)
-        pd.DataFrame(self._rollout_buffer).to_parquet(save_path, index=False)
+        makedirs(os.path.dirname(save_path) or ".", exist_ok=True)
+        # Replace atomically so failed writes cannot masquerade as complete exports.
+        temporary_path = save_path + ".tmp"
+        pd.DataFrame(self._rollout_buffer).to_parquet(temporary_path, index=False)
+        os.replace(temporary_path, save_path)
         print(f"[save_last_rollout] {len(self._rollout_buffer)} rows → {save_path}")
 
     def _load_checkpoint(self):
@@ -1144,6 +1154,10 @@ class RayPPOTrainer:
 
         self.global_steps = 0
         self._rollout_buffer = []
+        if OmegaConf.select(self.config.trainer, "save_last_rollout_path"):
+            window = OmegaConf.select(self.config.trainer, "save_last_rollout_steps", default=10)
+            if isinstance(window, bool) or not isinstance(window, int) or window <= 0:
+                raise ValueError("trainer.save_last_rollout_steps must be a positive integer")
 
         # load checkpoint before doing anything
         self._load_checkpoint()
@@ -1180,6 +1194,12 @@ class RayPPOTrainer:
                     self._start_profiling(do_profile)
 
                 batch: DataProto = DataProto.from_single_dict(batch_dict)
+                if OmegaConf.select(self.config.trainer, "save_last_rollout_path"):
+                    from verl.utils.solver_export import validate_export_inputs
+                    validate_export_inputs(
+                        batch.non_tensor_batch.get("item_id", np.array([])).tolist(),
+                        batch.non_tensor_batch.get("source_id", np.array([])).tolist(),
+                    )
 
                 # pop those keys for generation
                 batch_keys_to_pop = ["input_ids", "attention_mask", "position_ids"]
@@ -1241,6 +1261,12 @@ class RayPPOTrainer:
                     )
                     # repeat to align with repeated responses in rollout
                     batch = batch.repeat(repeat_times=self.config.actor_rollout_ref.rollout.n, interleave=True)
+                    if OmegaConf.select(self.config.trainer, "save_last_rollout_path"):
+                        # Assigned before balancing; travels with each candidate thereafter.
+                        batch.non_tensor_batch["export_rollout_index"] = np.tile(
+                            np.arange(self.config.actor_rollout_ref.rollout.n),
+                            len(batch) // self.config.actor_rollout_ref.rollout.n,
+                        )
                     batch = batch.union(gen_batch_output)
 
                     if "response_mask" not in batch.batch.keys():

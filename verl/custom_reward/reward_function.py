@@ -4,15 +4,10 @@ import string
 import logging
 
 import os
-import torch
-import numpy as np
 from collections import defaultdict, Counter
 
 import asyncio
 from copy import deepcopy
-from verl import DataProto
-from verl.utils.model import compute_position_id_with_mask
-import verl.utils.torch_functional as verl_F
 
 # MultiTurnRewardRollout은 임포트 시점에 sglang 전체를 로드하고
 # triton이 CUDA 드라이버를 초기화하려 함. Ray CPU worker에는 CUDA가 없으므로
@@ -152,6 +147,16 @@ def compute_challenger_format_scores(raw_messages, responses, hops, return_qa=Fa
 
 
 def compute_challenger_score_batch(data_sources, solution_strs, ground_truths, extra_infos, **kwargs):
+    """Original difficulty reward, with an optional experimental validity bonus."""
+    from verl.custom_reward.verifier_feedback import VerifierFeedbackConfig, finish_challenger_scores
+    feedback_config = VerifierFeedbackConfig.from_kwargs(kwargs)
+    # Configuration errors surface before importing/starting the rollout stack.
+    import torch
+    import numpy as np
+    from verl import DataProto
+    from verl.utils.model import compute_position_id_with_mask
+    import verl.utils.torch_functional as verl_F
+
     batch = kwargs["data"]
     processing_class = kwargs["processing_class"]
     assert "qwen" in type(processing_class).__name__.lower()
@@ -222,7 +227,9 @@ def compute_challenger_score_batch(data_sources, solution_strs, ground_truths, e
                 gen_batch[key].append(value)
 
     if len(gen_batch_ids) == 0:
-        return format_scores
+        return finish_challenger_scores(
+            format_scores, [], raw_qs, raw_ans, feedback_config, **kwargs,
+        )
 
     for key in gen_batch:
         if isinstance(gen_batch[key][0], torch.Tensor):
@@ -279,11 +286,13 @@ def compute_challenger_score_batch(data_sources, solution_strs, ground_truths, e
         f"🧑‍🎓 Challenger answer: {raw_ans[gen_batch_ids[0]]}\n"
         f"🙋‍♂️ Solver responses: {grouped_preds[0]}"
     )
-    return final_scores
+    return finish_challenger_scores(
+        final_scores, gen_batch_ids, raw_qs, raw_ans, feedback_config, **kwargs,
+    )
 
 
 def compute_challenger_score_batch_growth(data_sources, solution_strs, ground_truths, extra_infos, **kwargs):
-    """Growth-aware challenger reward (iter2+).
+    """Growth-aware challenger reward (selected by iter2; iter3 uses difficulty).
 
     r = 0.5 * format + difficulty(acc_curr) + lambda * max(0, acc_curr - acc_prev) * (1 - acc_curr)
 
@@ -295,7 +304,18 @@ def compute_challenger_score_batch_growth(data_sources, solution_strs, ground_tr
     Requires two sglang servers:
       base_url      : current solver  (iter t)   on port 8001
       prev_base_url : previous solver (iter t-1) on port 8002
+
+    Optional verifier feedback adds an answer-validity proxy bonus without
+    replacing either the difficulty or growth term. It is disabled by default.
     """
+    from verl.custom_reward.verifier_feedback import VerifierFeedbackConfig, finish_challenger_scores
+    feedback_config = VerifierFeedbackConfig.from_kwargs(kwargs)
+    import torch
+    import numpy as np
+    from verl import DataProto
+    from verl.utils.model import compute_position_id_with_mask
+    import verl.utils.torch_functional as verl_F
+
     batch = kwargs["data"]
     processing_class = kwargs["processing_class"]
     assert "qwen" in type(processing_class).__name__.lower()
@@ -351,7 +371,9 @@ def compute_challenger_score_batch_growth(data_sources, solution_strs, ground_tr
                 gen_batch[key].append(value)
 
     if len(gen_batch_ids) == 0:
-        return format_scores
+        return finish_challenger_scores(
+            format_scores, [], raw_qs, raw_ans, feedback_config, **kwargs,
+        )
 
     for key in gen_batch:
         if isinstance(gen_batch[key][0], torch.Tensor):
@@ -429,4 +451,6 @@ def compute_challenger_score_batch_growth(data_sources, solution_strs, ground_tr
         f"🙋 Curr solver: {grouped_curr[0]}\n"
         f"🙋 Prev solver: {grouped_prev[0]}"
     )
-    return final_scores
+    return finish_challenger_scores(
+        final_scores, gen_batch_ids, raw_qs, raw_ans, feedback_config, **kwargs,
+    )
